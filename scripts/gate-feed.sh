@@ -9,8 +9,8 @@
 # A feed whose packages verify against any key at all is not a signed feed: it is an unsigned one
 # with a key file next to it, and an install would not tell the two apart. So apk-tools v3 checks
 # every file here with this feed's public key as its only trusted key, in the alpine image mkapk.sh
-# pins, on forge (in_forge_alpine in feed-common.sh). The feed goes in on standard input; nothing
-# is written to forge's disk. That a router refuses what fails here is shown on a real OpenWrt
+# pins, on this Mac's Docker or with FEED_SIGN_ON=forge on forge (in_pinned_alpine in
+# feed-common.sh). The feed goes in on standard input; nothing is written to the disk there. That a router refuses what fails here is shown on a real OpenWrt
 # router by scripts/vlab-feed.sh.
 #
 #   ./scripts/gate-feed.sh                       feed-out, against keys/llm-gateway.pem
@@ -107,10 +107,10 @@ CONTAINER
 mkdir -p "$T/in"
 cp -R "$FEED/$RELEASE" "$T/in/"
 cp "$PUB_KEY" "$T/in/trusted.pem"
-out=$(feed_tar "$T/in" "$RELEASE" trusted.pem | in_forge_alpine "$T/gate.sh") || { echo "$out"; exit 1; }
+out=$(feed_tar "$T/in" "$RELEASE" trusted.pem | in_pinned_alpine "$T/gate.sh") || { echo "$out"; exit 1; }
 echo "$out"
 # A container that ran nothing would exit 0 too, so each check must have said so.
 for c in check_signed_by_the_feed_key check_arch_matches_its_directory check_entries_owned_by_root check_index_lists_the_packages; do
-	echo "$out" | grep -q "^PASS $c (" || { echo "FAIL $c: measured nothing: forge printed no verdict"; exit 1; }
+	echo "$out" | grep -q "^PASS $c (" || { echo "FAIL $c: measured nothing: the container printed no verdict"; exit 1; }
 done
 echo "gate-feed: all 5 checks passed ($FEED, against $(shasum -a 256 "$PUB_KEY" | cut -c1-16)...)"

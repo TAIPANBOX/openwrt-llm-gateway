@@ -102,5 +102,17 @@ fresh; throwaway prime256v1 > "$TMP/r/keys/llm-gateway.private.pem"; perl -i -ne
 expect "red:keys/llm-gateway.private.pem: a private key file is tracked or would be committed" "private key: .gitignore loses the rule" sh -c "$(KT TestNoPrivateKeyCommittable)"
 fresh; rm -rf "$TMP/r/.git"; expect nothing "private key: not a checkout" sh -c "$(KT TestNoPrivateKeyCommittable)"
 
+# Where the feed is signed: this Mac by default, forge only when asked
+S=TestFeedSigningStaysOnTheMacUnlessForgeIsAsked
+fresh; expect green "sign on: the Mac by default" sh -c "$(KT $S)"
+fresh; sed -i.bak 's/^FEED_SIGN_ON=${FEED_SIGN_ON:-local}$/FEED_SIGN_ON=${FEED_SIGN_ON:-forge}/' "$TMP/r/scripts/feed-common.sh"
+grep -q 'FEED_SIGN_ON:-forge' "$TMP/r/scripts/feed-common.sh" || { echo "BAD  the default-forge plant did not apply"; exit 1; }
+expect "red:--- FAIL: $S/default" "sign on: forge is the default" sh -c "$(KT $S)"
+fresh; perl -i -pe 's/^(\t+)docker ps >\/dev\/null 2>&1 \|\| \{$/$1true || {/' "$TMP/r/scripts/feed-common.sh"
+grep -q 'docker ps >/dev/null' "$TMP/r/scripts/feed-common.sh" && { echo "BAD  the docker-ps plant did not apply"; exit 1; }
+expect "red:--- FAIL: $S/docker_down" "sign on: Docker is not asked first" sh -c "$(KT $S)"
+fresh; perl -i -pe 's/^(\t+)echo "feed: FEED_SIGN_ON=forge: the container runs on/$1true "/' "$TMP/r/scripts/feed-common.sh"
+expect "red:--- FAIL: $S/forge" "sign on: forge without a word in the log" sh -c "$(KT $S)"
+
 echo "teeth: $pass ok, $bad bad"
 [ $bad = 0 ]

@@ -46,6 +46,14 @@ Feature: llm-gateway installs from its signed feed, and only from it
 
 Feature: the feed's key
 
+  # bound to: TestFeedSigningStaysOnTheMacUnlessForgeIsAsked
+  Scenario: the feed is signed on the Mac that holds the key, unless forge is asked for
+    Given the signing container runs on this Mac's own Docker by default
+    When the feed is signed
+    Then the key reaches the container only on its standard input and never leaves the Mac
+    And when that Docker does not answer, signing stops with a message instead of moving elsewhere
+    And forge signs only with FEED_SIGN_ON=forge, which the log says
+
   # bound to: TestFeedPublicKey
   Scenario: the published key is an EC public key on P-256, as apk needs
     Given keys/llm-gateway.pem

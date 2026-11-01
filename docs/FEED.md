@@ -43,8 +43,11 @@ FROM_CI=<run id of ci.yml on main> ./scripts/publish-feed.sh
    tree it was built from, and it must be HEAD's tree; a stray file, a missing architecture or two
    versions stop the build.
 3. **Signing.** The private key is read from the login keychain of the Mac that signs and reaches
-   forge only as the standard input of the alpine container `mkapk.sh` pins, which holds it in
-   memory and is gone when the signing ends; nothing is written to forge's disk. Inside, each
+   the alpine container `mkapk.sh` pins only on its standard input. The container runs on that
+   Mac's own Docker (`--pull never`, `--network none`, its work space in memory) and is gone when
+   the signing ends, so the key never leaves the Mac. If that Docker does not answer, signing stops
+   and says so. `FEED_SIGN_ON=forge` runs the same container on forge instead, a fallback that
+   sends the key there and says so in the log. Inside, each
    package must be `llm-gateway`, declare its directory's architecture and the version its file
    name says, and give every entry to root, or it is not signed. apk-tools v3 then signs the
    packages, builds and signs each index (packages first: `apk mkndx` refuses a package it cannot
@@ -76,7 +79,8 @@ through `gates-have-teeth.sh`:
 | `check_architectures` | exactly CI's architectures, each with the index and the same package |
 | `check_no_private_key` | no file holds a private key |
 
-[scripts/gate-feed.sh](../scripts/gate-feed.sh) runs that first, then apk-tools v3 on forge:
+[scripts/gate-feed.sh](../scripts/gate-feed.sh) runs that first, then apk-tools v3 in the same
+pinned container:
 
 | check | what it requires |
 | --- | --- |

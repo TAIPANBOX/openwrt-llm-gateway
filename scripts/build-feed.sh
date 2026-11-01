@@ -18,11 +18,13 @@
 #
 # Where it is signed
 #
-# The private key is read from the login keychain (feed-keygen.sh) and reaches forge only as the
-# standard input of the pinned alpine container, which keeps it in memory and is gone when the
-# signing ends (in_forge_alpine in feed-common.sh). Inside, before anything is signed, each package
-# must be llm-gateway, declare its directory's architecture and the version its file name says,
-# and give every entry to root (the r1 packages did not; see mkapk.sh). Then:
+# The private key is read from the login keychain (feed-keygen.sh) and reaches the pinned alpine
+# container only on its standard input; the container keeps it in memory and is gone when the
+# signing ends (in_pinned_alpine in feed-common.sh). The container runs on this Mac's Docker, so
+# the key does not leave it; FEED_SIGN_ON=forge runs it on forge instead, and says so. Inside,
+# before anything is signed, each package must be llm-gateway, declare its directory's
+# architecture and the version its file name says, and give every entry to root (the r1 packages
+# did not; see mkapk.sh). Then:
 #
 #   the packages first and the index second: `apk mkndx` refuses a package it cannot verify, with
 #   "UNTRUSTED signature", which reads like a problem with the key rather than with the order;
@@ -105,7 +107,7 @@ for a in $ARCHES; do
 	cp "$DL/llm-gateway-$a/$PKG" "$OUT/$RELEASE/$a/"
 done
 
-# ---- 3. sign on forge
+# ---- 3. sign, in the pinned image (on this Mac unless FEED_SIGN_ON=forge)
 SIGN=$WORK/sign.sh
 {
 	echo "RELEASE='$RELEASE'"
@@ -158,8 +160,12 @@ rm -rf "$STAGE" "$WORK/signed.tar"
 mkdir -p "$STAGE"
 cp -R "$OUT/$RELEASE" "$STAGE/"
 cp "$PUB_KEY" "$STAGE/trusted.pem"
-echo "==> signing on $FORGE in $ALPINE"
-{ feed_private_key; feed_tar "$STAGE" "$RELEASE" trusted.pem; } | in_forge_alpine "$SIGN" > "$WORK/signed.tar"
+if [ "$FEED_SIGN_ON" = forge ]; then
+	echo "==> signing on $FORGE in $ALPINE: FEED_SIGN_ON=forge, so the signing key goes to forge, on the container's standard input"
+else
+	echo "==> signing on this Mac in $ALPINE: the signing key stays here"
+fi
+{ feed_private_key; feed_tar "$STAGE" "$RELEASE" trusted.pem; } | in_pinned_alpine "$SIGN" > "$WORK/signed.tar"
 rm -rf "$OUT/$RELEASE" "$STAGE"
 tar -xf "$WORK/signed.tar" -C "$OUT"
 rm -f "$WORK/signed.tar"

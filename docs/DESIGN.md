@@ -124,7 +124,7 @@ apk for 25.12 (ipk for 24.10 later); aarch64, arm, mipsel, x86_64 from one `GOAR
 7.7 MiB, mipsle 8.5 MiB (over the 8 MB target). The apk is written by `apk mkpkg` from apk-tools 3
 in a pinned alpine image: OpenWrt's own apk has no `mkpkg` (measured on 25.12.5, apk-tools 3.0.5,
 2026-11-01), so the package cannot be built on the router. It is published through its own signed apk
-feed on GitHub Pages, signed on the Mac that holds the key from the packages CI built, next to
+feed on GitHub Pages, signed on the Mac that holds the key, in its own Docker, from the packages CI built, next to
 hermes-openwrt's feed: [FEED.md](FEED.md). Every entry of the package is root's: the r1 packages
 named them nobody:nobody (`@measured scripts/vlab-feed.sh OLD_APK=<r1> 2026-11-01`: /usr/bin/llm-gateway
 and /etc/init.d/llm-gateway installed as 65534:65534 on OpenWrt 25.12.5), so the release is r2. hermes-openwrt gets an option to pair with it the way it pairs with

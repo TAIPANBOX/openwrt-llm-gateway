@@ -65,9 +65,12 @@ Language: Go, stdlib only. Testing tier: T3 (authorization decisions whose failu
     `refused_when_the_package_is_corrupted`; gate mutants: `docs/evidence/feed-gate-mutants-2026-11-01.txt`)
 11. **The feed's private key is only in the login keychain of the signing Mac** (service
     `llm-gateway-feed-signing-key`, account `TAIPANBOX/openwrt-llm-gateway`, the PEM in base64). It
-    is never a file, a program argument, a CI secret or printed; it reaches forge only as the
-    standard input of the signing container, in memory. No private key is committable.
-    (partly gated: `TestNoPrivateKeyCommittable`, `check_no_private_key` in `scripts/gate-feed-tree.sh`;
+    is never a file, a program argument, a CI secret or printed; it reaches the signing container
+    only on its standard input, in memory. That container runs on the Mac's own Docker; forge only
+    with `FEED_SIGN_ON=forge`, which the log names, and a Mac whose Docker does not answer stops
+    rather than moving elsewhere. No private key is committable.
+    (partly gated: `TestNoPrivateKeyCommittable`, `check_no_private_key` in `scripts/gate-feed-tree.sh`,
+    `TestFeedSigningStaysOnTheMacUnlessForgeIsAsked` with its teeth in `scripts/gates-have-teeth.sh`;
     where the key goes is held by `scripts/feed-keygen.sh` and `scripts/build-feed.sh` as written)
 12. **Every entry of a package is root's.** The r1 packages were nobody's.
     (gate: `check_owners` in `mkapk.sh`, run on every CI build; `check_entries_owned_by_root` in
@@ -89,8 +92,9 @@ Language: Go, stdlib only. Testing tier: T3 (authorization decisions whose failu
   without its subject.
 - `python3 scripts/mutate.py`: every mutant caught by its named test.
 - `scripts/vlab-e2e.sh`: the real firewall, on forge (not in CI; evidence in `docs/evidence/`).
-- `scripts/gate-feed.sh` and `scripts/teeth-feed.sh`: the signed feed, on forge, run by
-  `scripts/publish-feed.sh` before every push; `scripts/vlab-feed.sh`: the feed on a real router.
+- `scripts/gate-feed.sh` and `scripts/teeth-feed.sh`: the signed feed, in the pinned container on
+  the Mac's Docker (forge with `FEED_SIGN_ON=forge`), run by `scripts/publish-feed.sh` before every
+  push; `scripts/vlab-feed.sh`: the feed on a real router, in vlab on forge.
 
 ## Releasing
 

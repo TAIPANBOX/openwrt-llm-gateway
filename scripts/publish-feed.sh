@@ -16,7 +16,7 @@
 # What this does
 #
 #   1. refuses unless the working tree is clean and HEAD is origin/main; FEED_TRIAL is cleared
-#   2. build-feed.sh: the run's packages, required to be built from HEAD's tree, signed on forge
+#   2. build-feed.sh: the run's packages, required to be built from HEAD's tree, signed on this Mac
 #   3. gate-feed.sh and teeth-feed.sh against the result, before anything is pushed
 #   4. replaces the gh-pages branch with one fresh commit holding only the feed, and pushes it
 #   5. turns GitHub Pages on for that branch if it is not, and waits until the published key and
