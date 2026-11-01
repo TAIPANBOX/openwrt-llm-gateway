@@ -23,11 +23,28 @@ llm-gateway puts them behind the router:
 
 One static Go binary, about 7 to 9 MB, no database.
 
+## Install
+
+OpenWrt 25.12 with apk, from the signed feed. On the router, as root: trust the feed's key, check
+it, add the feed for the router's own architecture, install.
+
+```sh
+wget -O /etc/apk/keys/llm-gateway.pem https://taipanbox.github.io/openwrt-llm-gateway/llm-gateway.pem
+sha256sum /etc/apk/keys/llm-gateway.pem
+echo "https://taipanbox.github.io/openwrt-llm-gateway/25.12/$(cat /etc/apk/arch)/packages.adb" >> /etc/apk/repositories.d/customfeeds.list
+apk update && apk add llm-gateway
+```
+
+The sum must be `d5151976fb774d291b4954cce7ea86cf4cf25de6c616c3fbbf05fd5a531457fa`; if it is not,
+delete the file and stop. apk then checks the index and the package against this key, with no
+`--allow-untrusted`, and refuses a package signed by another key or damaged on the way. Without
+the key apk ignores the feed. Architectures: `aarch64_cortex-a53` (GL.iNet Flint 2 and other
+Filogic routers), `arm_cortex-a7_neon-vfpv4`, `mipsel_24kc`, `x86_64`. The service does nothing
+until it is configured. How the feed is built, signed and checked: [docs/FEED.md](docs/FEED.md).
+
 ## Use
 
 ```sh
-apk add --allow-untrusted llm-gateway-0.1.0-r1.apk
-
 # the network where the model machines live becomes a zone only the router reaches
 llm-gateway models-zone models
 

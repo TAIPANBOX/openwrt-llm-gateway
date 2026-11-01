@@ -8,7 +8,7 @@
 #
 # A scenario is preceded by one or more binding lines:
 #   # bound to: TestName[, TestName...]            Go tests in *_test.go
-#   # bound to vlab: check_name[, check_name...]   checks scripts/vlab-e2e.sh --selftest lists
+#   # bound to vlab: check_name[, check_name...]   checks a scripts/vlab-*.sh --selftest lists
 # BOUND_SKIP_RUN=1 skips running the Go tests (the teeth script uses it for speed where running
 # is not what it plants).
 set -eu
@@ -30,6 +30,8 @@ awk '
 ' $FEATURES > "$TMP/scenarios"
 [ -s "$TMP/scenarios" ] || { echo "FAIL: measured nothing: no scenarios"; exit 1; }
 
+for s in scripts/vlab-*.sh; do sh "$s" --selftest; done > "$TMP/vlab" 2>/dev/null || true
+
 fail=0
 while IFS='|' read -r file line go vl; do
 	if [ -z "$go" ] && [ -z "$vl" ]; then
@@ -42,8 +44,8 @@ while IFS='|' read -r file line go vl; do
 		echo "$t" >> "$TMP/tests"
 	done
 	for c in $(echo "$vl" | tr ',' ' '); do
-		if ! sh scripts/vlab-e2e.sh --selftest | grep -qx "$c"; then
-			echo "FAIL: $file:$line: bound to vlab check $c, which scripts/vlab-e2e.sh does not run"; fail=1
+		if ! grep -qx "$c" "$TMP/vlab"; then
+			echo "FAIL: $file:$line: bound to vlab check $c, which no scripts/vlab-*.sh runs"; fail=1
 		fi
 	done
 done < "$TMP/scenarios"

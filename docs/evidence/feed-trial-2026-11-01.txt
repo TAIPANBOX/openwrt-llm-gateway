@@ -1,0 +1,40 @@
+# build-feed.sh, gate-feed.sh and teeth-feed.sh on the trial feed from CI run 41323007732 (2281c8a), 2026-11-01
+
+$ FEED_TRIAL=1 FROM_CI=41323007732 ./scripts/build-feed.sh
+==> trial: HEAD 2281c8a23bafe46ce410789fbe80cab92a9ef71d is not origin/main 765bf4366fbe264b9f24a9a70618a20230561e00; this build is never published
+==> run 41323007732: ci.yml, pull_request on feat/signed-feed, 2281c8a23bafe46ce410789fbe80cab92a9ef71d, success
+    aarch64_cortex-a53: llm-gateway-0.1.0-r2.apk sha256 2ce60354f59a83e78aa34ae3fabfd66aac41afd7f89aaa42846ace99f431fa74, tree 2edbf35847806f89702098417857104d6dc85cf4
+    arm_cortex-a7_neon-vfpv4: llm-gateway-0.1.0-r2.apk sha256 c16a263c62be3747b205b20106562e02e95a7b042b751571d4ea74bd8781c431, tree 2edbf35847806f89702098417857104d6dc85cf4
+    mipsel_24kc: llm-gateway-0.1.0-r2.apk sha256 0f47f73097e120677bc0d7b649d8a2a410e8aee50b1b17c1cebdd953d2a5931b, tree 2edbf35847806f89702098417857104d6dc85cf4
+    x86_64: llm-gateway-0.1.0-r2.apk sha256 9affc1d37ac2bdcea146ffc600f5eb4e3142226338c73455b010b9b7242518e7, tree 2edbf35847806f89702098417857104d6dc85cf4
+==> signing on yurii@192.168.1.10 in alpine@sha256:020dfcbaaf4cc1078bf2d9c7ba31a8466e334061dcd2f248001d68f79e52c000
+==> aarch64_cortex-a53: 1 package and the index signed, verified against llm-gateway.pem alone
+==> arm_cortex-a7_neon-vfpv4: 1 package and the index signed, verified against llm-gateway.pem alone
+==> mipsel_24kc: 1 package and the index signed, verified against llm-gateway.pem alone
+==> x86_64: 1 package and the index signed, verified against llm-gateway.pem alone
+==> feed at feed-out ( 12M): llm-gateway-0.1.0-r2.apk for aarch64_cortex-a53 arm_cortex-a7_neon-vfpv4 mipsel_24kc x86_64 
+    key sha256 d5151976fb774d291b4954cce7ea86cf4cf25de6c616c3fbbf05fd5a531457fa
+exit 0
+
+$ ./scripts/gate-feed.sh
+PASS check_tree (gate-feed-tree: all 6 checks passed (feed-out))
+PASS check_signed_by_the_feed_key (8 files, llm-gateway.pem the only trusted key)
+PASS check_arch_matches_its_directory (4 packages)
+PASS check_entries_owned_by_root (52 entries, all root:root)
+PASS check_index_lists_the_packages (4 indexes)
+gate-feed: all 5 checks passed (feed-out, against d5151976fb774d29...)
+
+$ ./scripts/teeth-feed.sh
+PASS tooth clean: gate exit 0, said "gate-feed: all 5 checks passed"
+PASS tooth resigned: gate exit 0, said "gate-feed: all 5 checks passed"
+PASS tooth wrongkey: gate exit 1, said "FAIL check_signed_by_the_feed_key: aarch64_cortex-a53/llm-gateway-0.1.0-r2.apk"
+PASS tooth unsignedidx: gate exit 1, said "FAIL check_signed_by_the_feed_key: x86_64/packages.adb"
+PASS tooth tampered: gate exit 1, said "FAIL check_signed_by_the_feed_key: x86_64/llm-gateway-0.1.0-r2.apk"
+PASS tooth wrongarch: gate exit 1, said "FAIL check_arch_matches_its_directory: x86_64/llm-gateway-0.1.0-r2.apk declares arch 'aarch64_cortex-a53'"
+PASS tooth wrongindex: gate exit 1, said "FAIL check_index_lists_the_packages: x86_64/packages.adb lists packages of another arch"
+PASS tooth nobody: gate exit 1, said "FAIL check_entries_owned_by_root: x86_64/llm-gateway-0.1.0-r2.apk"
+PASS tooth staleindex: gate exit 1, said "FAIL check_index_lists_the_packages: x86_64/packages.adb lists 'llm-gateway-"
+PASS tooth renamed: gate exit 1, said "FAIL check_index_lists_the_packages: aarch64_cortex-a53/llm-gateway-0.0.1-r9.apk is llm-gateway 0.1.0-r2, so apk asks for llm-gateway-0.1.0-r2.apk"
+PASS tooth dsstore: gate exit 1, said "FAIL check_only_feed_files: a .DS_Store"
+PASS tooth missing: gate exit 1, said "measured nothing"
+teeth-feed: all 12 teeth hold

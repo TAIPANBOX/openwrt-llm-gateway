@@ -1,0 +1,20 @@
+# Mutants of scripts/gate-feed.sh, 2026-11-01: each applied to a copy of the gate, which
+# scripts/teeth-feed.sh then runs (GATE=<copy>) against the trial feed from CI run 41323007732.
+# A mutant is caught when at least one tooth fails; the teeth that failed are named.
+#
+# An earlier round had a tenth mutant, measured-nothing-passes, which survived: the container's
+# "no architecture" line could not fire, because gate-feed-tree.sh has already required every
+# architecture and set -e stops on an empty directory listing. The line was removed, and the gate
+# now requires a PASS line from the container for each of its four checks instead
+# (container-runs-nothing below).
+
+caught    verify-not-run             by tooth wrongkey, unsignedidx, tampered
+caught    verify-allows-untrusted    by tooth wrongkey, unsignedidx
+caught    arch-not-checked           by tooth wrongarch
+caught    owners-not-checked         by tooth nobody
+caught    name-not-checked           by tooth renamed
+caught    index-arch-not-checked     by tooth wrongindex
+caught    index-not-compared         by tooth staleindex
+caught    tree-not-run               by tooth dsstore, missing
+caught    container-runs-nothing     by tooth clean, resigned, wrongkey, unsignedidx, tampered, wrongarch, wrongindex, nobody, staleindex, renamed
+gate mutants: 9 of 9 caught

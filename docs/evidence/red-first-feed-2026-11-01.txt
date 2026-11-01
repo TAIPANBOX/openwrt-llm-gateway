@@ -1,0 +1,137 @@
+# Red first: the signed feed, 2026-11-01
+
+## 1. mkapk.sh named every entry nobody:nobody (forge, run as yurii uid 1000, as a CI runner is uid 1001)
+#    old = mkapk.sh at 765bf43; new = this branch; nochown = this branch with the chown taken out,
+#    which check_owners must refuse
+yurii
+/home/yurii/llmgw-owners/docker
+### old/mkapk.sh, run as yurii (uid 1000)
+llm-gateway-0.1.0-r1.apk
+exit 0
+### new/mkapk.sh, run as yurii (uid 1000)
+llm-gateway-0.1.0-r2.apk
+exit 0
+### nochown/mkapk.sh, run as yurii (uid 1000)
+mkapk.sh: llm-gateway-0.1.0-r2.apk: 13 entries, 0 owned by user root, 0 by group root; every entry must be root's:
+      4           group: nobody
+      9       group: nobody
+      4           user: nobody
+      9       user: nobody
+exit 1
+### owners in old/*.apk
+      4           group: nobody
+      9       group: nobody
+      4           user: nobody
+      9       user: nobody
+### owners in new/*.apk
+      4           group: root
+      9       group: root
+      4           user: root
+      9       user: root
+
+## 2. the r1 package of CI run 41319092329 on a real OpenWrt 25.12.5 router (scripts/vlab-feed.sh OLD_APK=...)
+--- evidence: owners of the package given as old.apk
+    -rw-r--r--    1 65534    65534         1098 Nov  1 15:03 /etc/config/llm-gateway
+    -rwxr-xr-x    1 65534    65534         2701 Nov  1 15:03 /etc/init.d/llm-gateway
+    -rwxr-xr-x    1 65534    65534      8052896 Nov  1 15:03 /usr/bin/llm-gateway
+    drwxr-xr-x   18 0        0             4096 Nov  1 15:38 /
+    drwxr-xr-x   26 0        0             4096 Nov  1 15:38 /etc
+    drwxr-xr-x    2 0        0             4096 Nov  1 15:38 /etc/init.d
+    drwxr-xr-x    7 0        0             4096 Jun 29 12:59 /usr
+    drwxr-xr-x    2 0        0             4096 Nov  1 15:38 /usr/bin
+
+## 3. gate-feed.sh on the trial feed with one byte changed in the middle of the x86_64 package
+#    (the router's own refusal of the same corruption is refused_when_the_package_is_corrupted)
+PASS check_tree (gate-feed-tree: all 6 checks passed (build/mid))
+FAIL check_signed_by_the_feed_key: x86_64/llm-gateway-0.1.0-r2.apk: llm-gateway-0.1.0-r2.apk: file integrity error 
+
+## 4. build-feed.sh and feed-keygen.sh refuse
+$ FROM_CI=41321733358 ./scripts/build-feed.sh        # in a clean checkout of e3e4cc7, a pull request head, without FEED_TRIAL
+build-feed.sh: HEAD (e3e4cc78d35fa4ce3f755d788a6ca2fc11a5120c) is not origin/main (765bf4366fbe264b9f24a9a70618a20230561e00); refusing
+exit 1
+
+$ FEED_TRIAL=1 FROM_CI=41319092329 ./scripts/build-feed.sh   # the same checkout, the run of main 765bf43
+==> trial: HEAD e3e4cc78d35fa4ce3f755d788a6ca2fc11a5120c is not origin/main 765bf4366fbe264b9f24a9a70618a20230561e00; this build is never published
+build-feed.sh: run 41319092329 is for 765bf4366fbe264b9f24a9a70618a20230561e00, HEAD is e3e4cc78d35fa4ce3f755d788a6ca2fc11a5120c
+exit 1
+
+$ FROM_CI=abc ./scripts/build-feed.sh
+build-feed.sh: usage: FROM_CI=<ci.yml run id> ./scripts/build-feed.sh
+exit 1
+
+$ FEED_TRIAL=1 FROM_CI=41321733358 ./scripts/build-feed.sh   # a working tree with uncommitted files
+build-feed.sh: the working tree is not clean; commit first:
+ M CLAUDE.md
+ M README.md
+    ...
+exit 1
+
+$ ./scripts/feed-keygen.sh   # a second time
+feed-keygen.sh: keys/llm-gateway.pem or the keychain item llm-gateway-feed-signing-key / TAIPANBOX/openwrt-llm-gateway already exists.
+feed-keygen.sh: a second key does not replace the first on any router that already
+feed-keygen.sh: trusts it. Delete it deliberately if you mean to.
+exit 1
+
+## 5. the new gates and tests on their planted faults (scripts/gates-have-teeth.sh, the feed section)
+ok   feed tree: clean
+ok   feed tree: a .DS_Store
+ok   feed tree: a stray file
+ok   feed tree: a symbolic link
+ok   feed tree: no .nojekyll
+ok   feed tree: another key published
+ok   feed tree: an architecture missing
+ok   feed tree: an architecture CI does not build
+ok   feed tree: two packages in one architecture
+ok   feed tree: a private key in the feed
+ok   feed tree: no feed
+ok   feed: a tree fault stops gate-feed.sh
+ok   feed: no feed for gate-feed.sh
+ok   feed key: the public key
+ok   feed key: the private half in its place
+ok   feed key: another curve
+ok   feed key: a second block
+ok   feed key: no public key
+ok   private key: a clean checkout
+ok   private key: under another name
+ok   private key: force-added
+ok   private key: .gitignore loses the rule
+ok   private key: not a checkout
+
+## 6. where the feed is signed: TestFeedSigningStaysOnTheMacUnlessForgeIsAsked, red first
+#    against the behaviour before it, under the new name: in_pinned_alpine() { in_forge_alpine "$@"; },
+#    which always went to forge and said nothing (docker and ssh are stubs that log their calls)
+--- FAIL: TestFeedSigningStaysOnTheMacUnlessForgeIsAsked (0.60s)
+--- FAIL: TestFeedSigningStaysOnTheMacUnlessForgeIsAsked/default (0.17s)
+feedsign_test.go:110: no call with "docker ps"; calls:
+feedsign_test.go:115: a call with "\nssh "; calls:
+--- FAIL: TestFeedSigningStaysOnTheMacUnlessForgeIsAsked/local (0.19s)
+feedsign_test.go:110: no call with "docker ps"; calls:
+feedsign_test.go:115: a call with "\nssh "; calls:
+--- FAIL: TestFeedSigningStaysOnTheMacUnlessForgeIsAsked/docker_down (0.07s)
+feedsign_test.go:100: succeeded=true, want false
+--- FAIL: TestFeedSigningStaysOnTheMacUnlessForgeIsAsked/image_missing (0.06s)
+feedsign_test.go:100: succeeded=true, want false
+--- FAIL: TestFeedSigningStaysOnTheMacUnlessForgeIsAsked/forge (0.05s)
+feedsign_test.go:119: stderr does not say "forge": 
+--- FAIL: TestFeedSigningStaysOnTheMacUnlessForgeIsAsked/unknown (0.06s)
+feedsign_test.go:100: succeeded=true, want false
+FAIL
+FAIL	github.com/TAIPANBOX/openwrt-llm-gateway	1.119s
+FAIL
+exit 1
+
+#    the same function after the change, on the real machines (Docker Desktop on the Mac answering)
+$ printf 'through stdin\n' | FEED_SIGN_ON=forge in_pinned_alpine <script: apk --version; cat>
+feed: FEED_SIGN_ON=forge: the container runs on yurii@192.168.1.10; what it reads on standard input goes there
+apk-tools 3.0.7-r0, compiled for x86_64.
+through stdin
+exit 0
+
+$ printf 'through stdin\n' | in_pinned_alpine <the same script>        # the default: this Mac, whose Docker Desktop answers
+apk-tools 3.0.7-r0, compiled for aarch64.
+through stdin
+exit 0
+
+$ which docker; docker ps
+~/.docker/bin/docker
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES

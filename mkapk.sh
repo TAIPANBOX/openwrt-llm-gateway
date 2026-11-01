@@ -13,7 +13,9 @@ set -eu
 BIN=${1:?usage: mkapk.sh <binary> <version> [arch]}
 VERSION=${2:?usage: mkapk.sh <binary> <version> [arch]}
 ARCH=${3:-aarch64_cortex-a53}
-PKGREL=${PKGREL:-1}
+# r2: the r1 packages named every entry nobody:nobody (see run_mkpkg); the same version with other
+# owners would be a second package under one name.
+PKGREL=${PKGREL:-2}
 PKG=llm-gateway
 DESCRIPTION="The house model servers behind one name on the router: a key per client, HTTPS under a name-constrained house CA, zone rules and a journal without content."
 OUT="${PKG}-${VERSION}-r${PKGREL}.apk"
@@ -62,28 +64,56 @@ if [ -n "${MKAPK_STAGE:-}" ]; then
 	mkdir -p "$MKAPK_STAGE"
 	cp -R "$DATA" "$MKAPK_STAGE/root"
 	cp "$BUILD/post-install" "$BUILD/pre-deinstall" "$MKAPK_STAGE/"
+	# Run as root in the pinned image: the tree is copied and given to root first, for the reason
+	# run_mkpkg below gives, and the bind-mounted original is left to its owner.
 	{
 		echo '#!/bin/sh'
-		echo 'cd "$(dirname "$0")" && apk mkpkg \\'
+		echo 'set -e; cd "$(dirname "$0")"; t=$(mktemp -d); cp -a root "$t/root"; chown -R 0:0 "$t/root"'
+		echo 'apk mkpkg \\'
 		echo "	--info 'name:$PKG' --info 'version:$VERSION-r$PKGREL' --info 'arch:$ARCH' \\"
 		echo "	--info 'license:MIT' --info 'origin:$PKG' --info 'url:https://github.com/TAIPANBOX/openwrt-llm-gateway' \\"
 		echo "	--info 'maintainer:TAIPANBOX' --info 'depends:libc ubus jsonfilter' \\"
 		echo "	--info 'description:$DESCRIPTION' \\"
 		echo "	--script post-install:post-install --script pre-deinstall:pre-deinstall \\"
-		echo "	--files root --output $OUT && echo $OUT"
+		echo "	--files \"\$t/root\" --output $OUT && rm -rf \"\$t\" && echo $OUT"
 	} > "$MKAPK_STAGE/run-mkpkg.sh"
 	chmod 0755 "$MKAPK_STAGE/run-mkpkg.sh"
 	echo "staged in $MKAPK_STAGE"
 	exit 0
 fi
 
+# An apk names the owner of every entry, and `apk mkpkg` has no option to set it: apk-tools 3.0.7
+# takes the uid and gid of each file and directory of the tree and names them from the passwd and
+# group files of the system it runs on, writing nobody for an id it cannot name. On a CI runner
+# the tree belongs to the runner's user (uid 1001), which the alpine image does not know, so every
+# entry of the r1 packages was nobody:nobody, /usr/bin/llm-gateway and /etc/init.d/llm-gateway
+# (both run as root) included. So mkpkg reads a copy of the tree owned by root, and check_owners
+# reads the result back. A host apk is used only as root, the one case where the tree is root's
+# already; anything else runs in the pinned image, as root there, on a copy made inside it.
+if [ "$(id -u)" = 0 ] && command -v apk >/dev/null 2>&1 && apk mkpkg --help >/dev/null 2>&1; then
+	in_writer() { "$@"; }
+elif command -v docker >/dev/null 2>&1; then
+	in_writer() { docker run --rm -v "$BUILD:$BUILD" -w "$BUILD" "$ALPINE" "$@"; }
+else
+	echo "mkapk.sh: need apk-tools v3 on PATH and root, or docker to run $ALPINE" >&2
+	exit 1
+fi
+
 run_mkpkg() {
-	if command -v apk >/dev/null 2>&1 && apk mkpkg --help >/dev/null 2>&1; then
-		apk mkpkg "$@"
-	elif command -v docker >/dev/null 2>&1; then
-		docker run --rm -v "$BUILD:$BUILD" -w "$BUILD" "$ALPINE" apk mkpkg "$@"
-	else
-		echo "mkapk.sh: need apk-tools v3 on PATH or docker to run $ALPINE" >&2
+	# shellcheck disable=SC2016 # expanded by the inner shell, which gets the paths as arguments
+	in_writer sh -c 'set -e; src=$1; shift; t=$(mktemp -d); cp -a "$src/." "$t/"; chown -R 0:0 "$t"; apk mkpkg --files "$t" "$@"; rm -rf "$t"' \
+		sh "$DATA" "$@"
+}
+
+# check_owners <package>: fails unless every entry, files and directories, is root's as apk lists it.
+check_owners() {
+	in_writer apk adbdump "$1" > "$BUILD/adbdump.txt"
+	acls=$(grep -cE '^[[:space:]]*(- )?acl:' "$BUILD/adbdump.txt" || true)
+	users=$(grep -cE '^[[:space:]]*user: root$' "$BUILD/adbdump.txt" || true)
+	groups=$(grep -cE '^[[:space:]]*group: root$' "$BUILD/adbdump.txt" || true)
+	if [ "$acls" -eq 0 ] || [ "$users" -ne "$acls" ] || [ "$groups" -ne "$acls" ]; then
+		echo "mkapk.sh: $(basename "$1"): $acls entries, $users owned by user root, $groups by group root; every entry must be root's:" >&2
+		grep -E '^[[:space:]]*(user|group):' "$BUILD/adbdump.txt" | grep -v ': root$' | sort | uniq -c >&2 || true
 		exit 1
 	fi
 }
@@ -100,8 +130,8 @@ run_mkpkg \
 	--info "depends:libc ubus jsonfilter" \
 	--script "post-install:$BUILD/post-install" \
 	--script "pre-deinstall:$BUILD/pre-deinstall" \
-	--files "$DATA" \
 	--output "$BUILD/$OUT"
+check_owners "$BUILD/$OUT"
 
 rm -f "$SRC/$OUT"
 cp "$BUILD/$OUT" "$SRC/$OUT"

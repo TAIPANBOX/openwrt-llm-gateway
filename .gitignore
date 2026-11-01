@@ -4,3 +4,14 @@
 /build/
 *.apk
 *.ipk
+# the feed build-feed.sh lays out and signs
+/feed-out/
+# never commit secrets. keys/ holds only the feed's public key; its private half lives in the
+# login keychain of the signing Mac (scripts/feed-keygen.sh), and TestNoPrivateKeyCommittable fails
+# if git would commit any private key.
+*.pem
+!keys/llm-gateway.pem
+*.key
+keys/*.private.pem
+.env
+.env.*

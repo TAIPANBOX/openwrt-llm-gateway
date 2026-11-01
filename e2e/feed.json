@@ -1,0 +1,6 @@
+{
+  "name": "llmgw-feed",
+  "note": "llm-gateway's signed feed: one router installs from it with OpenWrt's own apk",
+  "segments": [{"name": "net", "cidr": "10.30.0.0/24", "internet": true}],
+  "nodes": [{"name": "r1", "wan": "net", "mem_mb": 256}]
+}

@@ -1,0 +1,64 @@
+# scripts/vlab-feed.sh, run 1, 2026-11-01: the trial feed from CI run 41321733358 (e3e4cc7), with
+# OLD_APK=the r1 x86_64 package of CI run 41319092329 (main 765bf43), installed after the checks to show its owners
+15:37:41 bundle: the x86_64 feed, a copy with one byte of the package changed, the key and another
+15:37:41   llm-gateway-0.1.0-r2.apk sha256 4e99b9be070f90c6dd126ae82983c691dc7ac95080ad49b03d17696930d89166, corrupted at byte 1679507 of 3359014
+15:37:41 ship to forge
+15:37:42 vlab up
+r1         mgmt 10.98.0.11  wan net
+15:38:07 router: the bundle into /tmp/feedtest
+15:38:08 router: the checks, with OpenWrt's own apk
+  apk 3.0.5,, OpenWrt 25.12.5, x86_64
+--- refused_without_the_key
+    WARNING: opening /tmp/feedtest/good/25.12/x86_64/packages.adb: UNTRUSTED signature
+    WARNING: opening /tmp/feedtest/good/25.12/x86_64/packages.adb: UNTRUSTED signature
+    ERROR: unable to select packages:
+      llm-gateway (no such package):
+        required by: world[llm-gateway]
+PASS refused_without_the_key
+--- installs_from_the_signed_index
+    sha256 of /etc/apk/keys/llm-gateway.pem: d5151976fb774d291b4954cce7ea86cf4cf25de6c616c3fbbf05fd5a531457fa
+    (1/1) Installing llm-gateway (0.1.0-r2)
+      Executing llm-gateway-0.1.0-r2.post-install
+      * Command failed: ubus call service delete { "name": "llm-gateway" } (Not found)
+    OK: 27.0 MiB in 183 packages
+    llm-gateway policy:
+      0.1.0-r2:
+        lib/apk/db/installed
+        /tmp/feedtest/good/25.12/x86_64/packages.adb
+    llm-gateway version: 0.1.0
+PASS installs_from_the_signed_index
+--- installed_files_belong_to_root
+    -rw-r--r--    1 0        0             1098 Nov  1 15:34 /etc/config/llm-gateway
+    -rwxr-xr-x    1 0        0             2701 Nov  1 15:34 /etc/init.d/llm-gateway
+    -rwxr-xr-x    1 0        0          8052896 Nov  1 15:34 /usr/bin/llm-gateway
+    13 paths, 0 not 0:0
+PASS installed_files_belong_to_root
+--- refused_with_another_key
+    WARNING: opening /tmp/feedtest/good/25.12/x86_64/packages.adb: UNTRUSTED signature
+    WARNING: opening /tmp/feedtest/good/25.12/x86_64/packages.adb: UNTRUSTED signature
+    ERROR: unable to select packages:
+      llm-gateway (no such package):
+        required by: world[llm-gateway]
+PASS refused_with_another_key
+--- refused_when_the_package_is_corrupted
+    (1/1) Installing llm-gateway (0.1.0-r2)
+    ERROR: llm-gateway-0.1.0-r2: file integrity error
+    1 error; 19.3 MiB in 182 packages
+PASS refused_when_the_package_is_corrupted
+--- evidence: owners of the package given as old.apk
+    -rw-r--r--    1 65534    65534         1098 Nov  1 15:03 /etc/config/llm-gateway
+    -rwxr-xr-x    1 65534    65534         2701 Nov  1 15:03 /etc/init.d/llm-gateway
+    -rwxr-xr-x    1 65534    65534      8052896 Nov  1 15:03 /usr/bin/llm-gateway
+    drwxr-xr-x   18 0        0             4096 Nov  1 15:38 /
+    drwxr-xr-x   26 0        0             4096 Nov  1 15:38 /etc
+    drwxr-xr-x    2 0        0             4096 Nov  1 15:38 /etc/init.d
+    drwxr-xr-x    7 0        0             4096 Jun 29 12:59 /usr
+    drwxr-xr-x    2 0        0             4096 Nov  1 15:38 /usr/bin
+15:38:13 PASS refused_without_the_key
+15:38:14 PASS installs_from_the_signed_index
+15:38:14 PASS installed_files_belong_to_root
+15:38:14 PASS refused_with_another_key
+15:38:14 PASS refused_when_the_package_is_corrupted
+15:38:14 checks: 5 passed, 0 failed
+15:38:14 take the lab down
+exit 0
