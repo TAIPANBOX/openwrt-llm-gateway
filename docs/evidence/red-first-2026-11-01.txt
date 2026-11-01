@@ -1,0 +1,48 @@
+=== RUN   TestRequestWithoutKeyIsRefusedBeforeAnyBackend
+    access_test.go:16: no key: got 200, want 401
+--- FAIL: TestRequestWithoutKeyIsRefusedBeforeAnyBackend (0.00s)
+=== RUN   TestWrongKeyIsRefused
+    access_test.go:28: key "llmgw_wrong": got 200, want 401
+--- FAIL: TestWrongKeyIsRefused (0.00s)
+=== RUN   TestLoopbackRequestStillNeedsAKey
+    access_test.go:48: loopback with no key: got 200, want 401
+--- FAIL: TestLoopbackRequestStillNeedsAKey (0.00s)
+=== RUN   TestClientReachesOnlyItsModels
+    access_test.go:59: model not given to the client: got 200, want 403
+--- FAIL: TestClientReachesOnlyItsModels (0.00s)
+=== RUN   TestModelListShowsOnlyTheClientsModels
+    access_test.go:95: /v1/models = {"id":"x","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"hi"}}],"usage":{"prompt_tokens":3,"completion_tokens":1}}, want only qwen3:14b
+--- FAIL: TestModelListShowsOnlyTheClientsModels (0.00s)
+=== RUN   TestHealthAnswersOkAndNothingElse
+    access_test.go:125: / with a key: got 200, want 404
+--- FAIL: TestHealthAnswersOkAndNothingElse (0.00s)
+=== RUN   TestNoResponseCarriesAWildcardOrigin
+    access_test.go:166: answered: header Access-Control-Allow-Origin: "*" carries a wildcard
+--- FAIL: TestNoResponseCarriesAWildcardOrigin (0.00s)
+=== RUN   TestUnlistedOriginIsRefused
+    access_test.go:191: unlisted origin: got 200, want 403
+--- FAIL: TestUnlistedOriginIsRefused (0.00s)
+=== RUN   TestListedOriginIsNamedBack
+    access_test.go:225: Access-Control-Allow-Origin = "", want "http://chat.lan:3000"
+--- FAIL: TestListedOriginIsNamedBack (0.00s)
+=== RUN   TestForeignHostIsRefused
+    access_test.go:259: Host "attacker.example": got 200, want 421
+--- FAIL: TestForeignHostIsRefused (0.00s)
+=== RUN   TestJournalRecordsTheRequestWithoutContent
+    journal_test.go:39: journal holds 0 entries, want 1
+--- FAIL: TestJournalRecordsTheRequestWithoutContent (0.00s)
+=== RUN   TestJournalRecordsARefusalWithoutTheKey
+    journal_test.go:60: got 200, want 401
+--- FAIL: TestJournalRecordsARefusalWithoutTheKey (0.00s)
+=== RUN   TestStreamingPassesThroughAndIsRecorded
+    journal_test.go:138: journal holds 0 entries, want 1:
+--- FAIL: TestStreamingPassesThroughAndIsRecorded (0.00s)
+=== RUN   TestListensOnlyOnNamedZoneAddressesAndLoopback
+    reach_test.go:47: listen on [0.0.0.0:8760], want [192.168.8.1:8760 [fd00:8::1]:8760 127.0.0.1:8761]
+--- FAIL: TestListensOnlyOnNamedZoneAddressesAndLoopback (0.00s)
+=== RUN   TestPublicBackendAddressIsRefusedAtLoad
+    reach_test.go:115: https://api.example.com/v1: accepted
+--- FAIL: TestPublicBackendAddressIsRefusedAtLoad (0.00s)
+=== RUN   TestBackendNameResolvingOutsideIsRefusedAtDial
+    reach_test.go:155: a private answer was dialled 0 time(s), want 1
+--- FAIL: TestBackendNameResolvingOutsideIsRefusedAtDial (0.00s)

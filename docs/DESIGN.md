@@ -118,7 +118,13 @@ LuCI app (backends, clients with show-once keys, journal). Failover between loca
 A cloud backend, only per client and only when the owner turns it on. Our own phone model server.
 A LuCI helper that runs a model in the admin's browser (WebGPU or Chrome's Prompt API).
 
-## Open decision
+## TLS
 
-HTTPS on the LAN by default (each client trusts the router's certificate once) or plain HTTP with
-keys and HTTPS as an option. Loopback stays HTTP either way.
+`@decided 2026-11-01`: HTTPS on the LAN by default, chosen over plain HTTP with a key, at the cost
+that each client device trusts the router's certificate once.
+
+The package generates an ECDSA P-256 key and a self-signed certificate on first start
+(`/etc/llm-gateway/tls.key` 0600 root, `tls.crt`), with the router's LAN addresses and
+`llm.<domain>` as names. `llm-gateway cert` prints the certificate and its SHA-256 fingerprint, and
+`client add` prints the fingerprint next to the key. TLS 1.2 is the floor. The loopback port stays
+plain HTTP: it never leaves the router, and the key is still required on it (invariant 1).
