@@ -112,19 +112,21 @@ OpenWrt 25.12.5 router in the virtual lab and installs from it with OpenWrt's ow
 ## What has been run
 
 On 2026-11-01, on trial builds (`FEED_TRIAL=1`) from the packages of this repository's pull request
-#2, CI runs 41321733358 and 41323007732:
+#2, CI runs 41321733358, 41323007732 and 41324655324:
 
-- `build-feed.sh` checked the four artifacts against the tree of HEAD, signed them on forge and
-  verified every file against `keys/llm-gateway.pem` alone
-  ([evidence](evidence/feed-trial-2026-11-01.txt));
+- `build-feed.sh` checked the four artifacts against the tree of HEAD, signed them and verified
+  every file against `keys/llm-gateway.pem` alone: on forge for the first two builds, on the Mac's
+  own Docker for the third, the default since then
+  ([forge](evidence/feed-trial-2026-11-01.txt), [Mac](evidence/feed-trial-local-2026-11-01.txt));
 - `gate-feed.sh` passed all 5 checks: 8 files signed by the feed key, 4 packages of the right
   architecture, 52 entries all `root:root`, 4 indexes;
 - `teeth-feed.sh`: all 12 teeth held;
 - nine mutants of `gate-feed.sh` itself were each caught by a tooth
   ([evidence](evidence/feed-gate-mutants-2026-11-01.txt));
 - `vlab-feed.sh` passed all 5 checks on OpenWrt 25.12.5 with apk 3.0.5, once on each build, and
-  the lab was taken down clean both times ([run 1](evidence/vlab-feed-2026-11-01-run1.txt),
-  [run 2](evidence/vlab-feed-2026-11-01-run2.txt));
+  the lab was taken down clean every time ([run 1](evidence/vlab-feed-2026-11-01-run1.txt),
+  [run 2](evidence/vlab-feed-2026-11-01-run2.txt), [run 3](evidence/vlab-feed-2026-11-01-run3.txt),
+  signed on the Mac);
 - the r1 package of CI run 41319092329, installed in the same lab, put `/usr/bin/llm-gateway`,
   `/etc/init.d/llm-gateway` and `/etc/config/llm-gateway` on the router as `65534:65534`; the
   feed serves r2, with every entry root's ([evidence](evidence/red-first-feed-2026-11-01.txt)).
