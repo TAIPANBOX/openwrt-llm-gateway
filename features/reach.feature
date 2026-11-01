@@ -6,12 +6,14 @@
 # 0.0.0.0, one with a public tunnel switched on by default, so a model meant for one desk was
 # reachable from every network segment and from the internet.
 #
-# Every scenario is bound by name to Go tests or to a real-firewall check, in the comment line above it:
+# Every scenario is bound by name to Go tests or to a check of the vlab end-to-end run on a real
+# OpenWrt firewall, in the comment line above it:
 #   # bound to: TestName[, TestName...]
+#   # bound to vlab: check_name[, check_name...]   (names from scripts/vlab-e2e.sh --selftest)
 
 Feature: the gateway is reachable only from the zones it names
 
-  # bound to: TestListensOnlyOnNamedZoneAddressesAndLoopback
+  # bound to: TestListensOnlyOnNamedZoneAddressesAndLoopback, TestServeBindsOnlyTheZoneAddressesAndLoopback, TestOpenWrtZonesReadTheFirewallAndNetifd
   Scenario: it listens on the addresses of the named zones and on loopback, and nowhere else
     Given the zone "lan" with the address 192.168.8.1 and the zone "guest" with 192.168.9.1
     And the gateway names the zone "lan"
@@ -19,7 +21,7 @@ Feature: the gateway is reachable only from the zones it names
     Then it listens on 192.168.8.1 and on 127.0.0.1
     And it does not listen on 192.168.9.1 or on any wildcard address
 
-  # bound to: TestRealFirewallOpensThePortOnlyFromNamedZones
+  # bound to vlab: guest_cannot_reach_the_port
   Scenario: a guest device cannot reach the port
     Given the gateway names the zone "lan"
     When a device in "guest" connects to the gateway's port
@@ -27,14 +29,14 @@ Feature: the gateway is reachable only from the zones it names
 
 Feature: a model box in the models zone is reachable only through the router
 
-  # bound to: TestRealFirewallRejectsForwardIntoModelsZone
+  # bound to vlab: lan_cannot_reach_the_model_box, lan_reaches_the_model_through_the_gateway
   Scenario: a LAN device cannot talk to a model box directly
     Given a model box in the zone "models"
     When a device in "lan" connects to the model box's port
     Then the firewall refuses the connection
     And a request through the gateway with a valid key is answered
 
-  # bound to: TestRealFirewallModelsZoneHasNoInternetByDefault
+  # bound to vlab: models_zone_has_no_internet
   Scenario: the models zone has no internet unless the owner turns it on
     Given a model box in the zone "models"
     When it connects to an address on the internet
