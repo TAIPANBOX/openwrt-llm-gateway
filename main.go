@@ -391,9 +391,12 @@ func serve(ctx context.Context, e *env, logw io.Writer) int {
 		lg.Print(err)
 		code = 1
 	}
-	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// A client may hold a connection open (HTTP/2 does); waiting on it would hold up a restart.
+	sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	srv.Shutdown(sctx)
+	if srv.Shutdown(sctx) != nil {
+		srv.Close()
+	}
 	wg.Wait()
 	return code
 }

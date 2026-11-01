@@ -126,7 +126,19 @@ func TestServeBindsOnlyTheZoneAddressesAndLoopback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	go func() { done <- serve(ctx, e, io.Discard) }()
-	defer func() { cancel(); <-done }()
+	var clients []*http.Client
+	defer func() {
+		for _, c := range clients {
+			c.CloseIdleConnections()
+		}
+		http.DefaultClient.CloseIdleConnections()
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(4 * time.Second):
+			t.Error("serve did not stop within 4 s of its context ending")
+		}
+	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		mu.Lock()
@@ -156,6 +168,7 @@ func TestServeBindsOnlyTheZoneAddressesAndLoopback(t *testing.T) {
 			return (&net.Dialer{}).DialContext(ctx, n, real["192.168.8.1:8760"])
 		},
 	}}
+	clients = append(clients, tc)
 	req, _ := http.NewRequest(http.MethodGet, "https://llm.lan:8760/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer "+testKey)
 	resp, err := tc.Do(req)
@@ -171,6 +184,7 @@ func TestServeBindsOnlyTheZoneAddressesAndLoopback(t *testing.T) {
 	pc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, n, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, n, real["192.168.8.1:8760"])
 	}}, Timeout: 2 * time.Second}
+	clients = append(clients, pc)
 	if resp, err := pc.Get("http://llm.lan:8760/health"); err == nil {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
