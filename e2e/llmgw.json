@@ -1,0 +1,16 @@
+{
+  "name": "llmgw",
+  "note": "llm-gateway end to end: r1 with a home LAN (p1), a guest network (p2) and a models zone (p3)",
+  "segments": [
+    {"name": "net", "cidr": "10.30.0.0/24", "internet": true},
+    {"name": "home", "kind": "link"},
+    {"name": "guestw", "kind": "link"},
+    {"name": "modw", "kind": "link"}
+  ],
+  "nodes": [{"name": "r1", "wan": "net", "ports": ["home", "guestw", "modw"], "mem_mb": 256}],
+  "clients": [
+    {"name": "laptop", "segment": "home", "mac": "02:ef:00:00:70:01"},
+    {"name": "guest", "segment": "guestw", "mac": "02:ef:00:00:71:01"},
+    {"name": "modelbox", "segment": "modw", "mac": "02:ef:00:00:60:01"}
+  ]
+}

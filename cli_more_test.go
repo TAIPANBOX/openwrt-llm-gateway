@@ -106,3 +106,14 @@ func TestUsageIsFoundWhereverTheStreamSplits(t *testing.T) {
 		t.Fatalf("oversized JSON: %d bytes, usage %+v", len(got), s.got)
 	}
 }
+
+func TestAddressesPrintsWhereItWouldListen(t *testing.T) {
+	e, _ := testEnv(t, "config gateway 'main'\n\tlist zone 'lan'\n")
+	var out, errOut bytes.Buffer
+	if code := run([]string{"addresses"}, &out, &errOut, e); code != 0 {
+		t.Fatalf("addresses exited %d: %s", code, errOut.String())
+	}
+	if out.String() != "192.168.8.1:8760\n127.0.0.1:8761\n" {
+		t.Fatalf("addresses printed %q", out.String())
+	}
+}

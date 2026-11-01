@@ -35,6 +35,9 @@ type env struct {
 	zones      ZoneSource
 	now        func() time.Time
 	listen     func(network, addr string) (net.Listener, error)
+	// firewallPath and reloadFirewall serve models-zone.
+	firewallPath   string
+	reloadFirewall func() error
 }
 
 func defaultEnv() *env {
@@ -46,10 +49,14 @@ func defaultEnv() *env {
 			cmd.Stdin = strings.NewReader(stdin)
 			return cmd.CombinedOutput()
 		},
-		resolver: net.DefaultResolver,
-		zones:    newOpenWrtZones(),
-		now:      time.Now,
-		listen:   net.Listen,
+		resolver:     net.DefaultResolver,
+		zones:        newOpenWrtZones(),
+		now:          time.Now,
+		listen:       net.Listen,
+		firewallPath: "/etc/config/firewall",
+		reloadFirewall: func() error {
+			return exec.Command("/etc/init.d/firewall", "reload").Run()
+		},
 	}
 }
 
@@ -60,6 +67,8 @@ const usageText = `usage:
   llm-gateway client add NAME -model M [-model M ...] [-origin URL ...] [-rate N] [-concurrent N]
   llm-gateway client remove NAME
   llm-gateway client list
+  llm-gateway models-zone NETWORK [-internet]
+  llm-gateway addresses
   llm-gateway cert
   llm-gateway check
   llm-gateway version
@@ -87,6 +96,25 @@ func run(args []string, stdout, stderr io.Writer, e *env) int {
 		case "list":
 			return clientList(stdout, stderr, e)
 		}
+	case "addresses":
+		// Where serve would listen, one per line; the init script names the first for dnsmasq.
+		secs, err := readSections(e.configPath)
+		if err != nil {
+			fmt.Fprintln(stderr, "llm-gateway:", err)
+			return 1
+		}
+		cfg := gatewaySettings(secs)
+		addrs, lerr := ListenAddrs(cfg.Zones, e.zones, cfg.Port, cfg.LoopbackPort)
+		for _, a := range addrs {
+			fmt.Fprintln(stdout, a)
+		}
+		if lerr != nil {
+			fmt.Fprintln(stderr, "llm-gateway:", lerr)
+			return 1
+		}
+		return 0
+	case "models-zone":
+		return modelsZone(args[1:], stdout, stderr, e)
 	case "cert":
 		return certCmd(stdout, stderr, e)
 	case "check":
@@ -188,6 +216,85 @@ func clientAdd(args []string, stdout, stderr io.Writer, e *env) int {
 		fmt.Fprintf(stdout, "  CA to trust    %s\n                 (llm-gateway cert prints it)\n", fp)
 	}
 	fmt.Fprintf(stdout, "\nLoad it with: service llm-gateway reload\n")
+	return 0
+}
+
+// modelsZone puts NETWORK, where the model boxes live, into a firewall zone of its own that the
+// router reaches and nothing else does (invariant 6): no forwarding in or out, input refused but
+// for DHCP and DNS. A LAN device can then reach a model only through the gateway, with a key.
+// Internet for the zone, for model downloads, is a flag the owner sets on purpose.
+func modelsZone(args []string, stdout, stderr io.Writer, e *env) int {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		fmt.Fprint(stderr, usageText)
+		return 2
+	}
+	network := args[0]
+	fs := flag.NewFlagSet("models-zone", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	internet := fs.Bool("internet", false, "let the model boxes reach the internet through wan")
+	if err := fs.Parse(args[1:]); err != nil {
+		return 2
+	}
+	fail := func(f string, a ...any) int { fmt.Fprintf(stderr, "llm-gateway: "+f+"\n", a...); return 1 }
+	if !nameRE.MatchString(network) || network == "lan" || network == "wan" || network == "wan6" {
+		return fail("network %q cannot be the models network", network)
+	}
+	secs, err := readSections(e.firewallPath)
+	if err != nil {
+		return fail("%v", err)
+	}
+	for _, s := range secs {
+		if s.Type != "zone" || s.Name == "llm_models" {
+			continue
+		}
+		nets := append(append([]string(nil), s.Lists["network"]...), strings.Fields(s.Options["network"])...)
+		for _, n := range nets {
+			if n == network {
+				return fail("network %s is already in the zone %s; take it out first", network, s.Options["name"])
+			}
+		}
+	}
+	var b strings.Builder
+	w := func(f string, a ...any) { fmt.Fprintf(&b, f+"\n", a...) }
+	for _, sec := range []string{"llm_models", "llm_models_dhcp", "llm_models_dns", "llm_models_wan"} {
+		w("delete firewall.%s", sec)
+	}
+	w("set firewall.llm_models='zone'")
+	w("set firewall.llm_models.name='models'")
+	w("set firewall.llm_models.input='REJECT'")
+	w("set firewall.llm_models.output='ACCEPT'")
+	w("set firewall.llm_models.forward='REJECT'")
+	w("add_list firewall.llm_models.network='%s'", network)
+	w("set firewall.llm_models_dhcp='rule'")
+	w("set firewall.llm_models_dhcp.name='Allow-models-DHCP'")
+	w("set firewall.llm_models_dhcp.src='models'")
+	w("set firewall.llm_models_dhcp.proto='udp'")
+	w("set firewall.llm_models_dhcp.dest_port='67'")
+	w("set firewall.llm_models_dhcp.family='ipv4'")
+	w("set firewall.llm_models_dhcp.target='ACCEPT'")
+	w("set firewall.llm_models_dns='rule'")
+	w("set firewall.llm_models_dns.name='Allow-models-DNS'")
+	w("set firewall.llm_models_dns.src='models'")
+	w("set firewall.llm_models_dns.proto='tcp udp'")
+	w("set firewall.llm_models_dns.dest_port='53'")
+	w("set firewall.llm_models_dns.target='ACCEPT'")
+	if *internet {
+		w("set firewall.llm_models_wan='forwarding'")
+		w("set firewall.llm_models_wan.src='models'")
+		w("set firewall.llm_models_wan.dest='wan'")
+	}
+	w("commit firewall")
+	if out, err := e.uci(b.String(), "batch"); err != nil {
+		return fail("uci: %v: %s", err, out)
+	}
+	if err := e.reloadFirewall(); err != nil {
+		return fail("firewall reload: %v", err)
+	}
+	fmt.Fprintf(stdout, "Network %s is now the zone models: only the router reaches it.", network)
+	if *internet {
+		fmt.Fprint(stdout, " It may reach the internet through wan.")
+	}
+	fmt.Fprintln(stdout)
 	return 0
 }
 

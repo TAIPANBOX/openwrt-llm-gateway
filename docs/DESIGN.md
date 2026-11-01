@@ -1,6 +1,6 @@
 # openwrt-llm-gateway: design
 
-Status: design, 2026-11-01. Nothing built yet. Working name; the package and binary are `llm-gateway`.
+Status: built 2026-11-01 (v0.1.0, not released). Working name; the package and binary are `llm-gateway`.
 
 Provenance: anything unmarked is `@claude` (my reading or plan, re-check before relying on it).
 `@measured <how> <date>` is a run. `@decided <date>` is the owner's decision, paraphrased.
@@ -59,7 +59,7 @@ config gateway 'main'
 config backend 'desktop'
 	option url 'http://10.0.60.10:11434/v1'
 	option key_file ''              # an upstream key, if the model server has one (0600 root)
-	list model 'qwen3:14b'          # what this backend serves; empty = ask its /v1/models
+	list model 'qwen3:14b'          # what this backend serves; listed, never discovered
 
 config client 'hermes'
 	option key_hash 'sha256:...'    # the key itself is shown once, at creation, never stored
@@ -67,6 +67,11 @@ config client 'hermes'
 	option rate '30/min'
 	option concurrent '2'
 ```
+
+Models are listed per backend, not discovered from its `/v1/models`: a model the owner did not
+name never appears, and a model served by two backends is a configuration error until failover
+exists. The journal is `/tmp/llm-gateway/journal.log` (RAM, 0600, one rotation at 1 MiB), so the
+flash takes none of its writes.
 
 Keys: 32 random bytes, base64url, prefix `llmgw_`. Stored as SHA-256 (a high-entropy token needs no
 slow hash). Compared with `crypto/subtle`. `llm-gateway client add NAME` prints the key, the
@@ -105,10 +110,20 @@ Real-firmware checks run in OpenWrt's rootfs container in CI (as openwrt-mcp doe
 end-to-end run is on vlab: a router VM, a `models` segment with a stand-in OpenAI server, a LAN
 client and a guest client.
 
+## Commands
+
+`serve`, `client add|remove|list`, `cert`, `check`, `version`, and two the init script uses:
+`addresses` (where `serve` would listen; the first IPv4 one becomes `llm.<domain>` in dnsmasq,
+so the name never points where the gateway does not listen) and `models-zone NETWORK [-internet]`
+(invariant 6: a zone with input refused but DHCP and DNS, no forwarding in or out).
+
 ## Packaging
 
-apk for 25.12 and ipk for 24.10; aarch64, arm, mipsel, x86_64 from one `GOARCH` matrix. Size
-target under 8 MB on disk, under 20 MB resident. Published later through our own signed feed,
+apk for 25.12 (ipk for 24.10 later); aarch64, arm, mipsel, x86_64 from one `GOARCH` matrix.
+`@measured go build -trimpath -ldflags "-s -w" 2026-11-01`: arm64 7.1 MiB, arm 7.6 MiB, amd64
+7.7 MiB, mipsle 8.5 MiB (over the 8 MB target). The apk is written by `apk mkpkg` from apk-tools 3
+in a pinned alpine image: OpenWrt's own apk has no `mkpkg` (measured on 25.12.5, apk-tools 3.0.5,
+2026-11-01), so the package cannot be built on the router. Published later through our own signed feed,
 next to hermes-openwrt. hermes-openwrt gets an option to pair with it the way it pairs with
 openwrt-mcp: the package creates the `hermes` client and writes its key into `key_file`.
 

@@ -1,0 +1,84 @@
+#!/bin/sh /etc/rc.common
+# llm-gateway under procd.
+#
+# Two things this script does that the daemon does not do for itself, because they change other
+# packages' configuration: a firewall rule opening the port from each zone the gateway names
+# (lan accepts input already; a zone such as iot does not), and a dnsmasq name for the gateway.
+# Both live in sections named llm_gateway*, which the removal script deletes.
+
+USE_PROCD=1
+START=96
+STOP=10
+PROG=/usr/bin/llm-gateway
+
+sync_firewall() {
+	local port zones zone changed=0 have
+	config_get port main port 8760
+	config_get zones main zone
+	for have in $(uci -q show firewall | sed -n "s/^firewall\.\(llm_gateway_[a-z0-9_]*\)=rule$/\1/p"); do
+		zone=${have#llm_gateway_}
+		case " $zones " in *" $zone "*) ;; *) uci -q delete "firewall.$have"; changed=1 ;; esac
+	done
+	for zone in $zones; do
+		if [ "$(uci -q get firewall.llm_gateway_$zone.dest_port)" != "$port" ]; then
+			uci -q batch <<-EOT
+				set firewall.llm_gateway_$zone='rule'
+				set firewall.llm_gateway_$zone.name='Allow-llm-gateway-$zone'
+				set firewall.llm_gateway_$zone.src='$zone'
+				set firewall.llm_gateway_$zone.proto='tcp'
+				set firewall.llm_gateway_$zone.dest_port='$port'
+				set firewall.llm_gateway_$zone.target='ACCEPT'
+			EOT
+			changed=1
+		fi
+	done
+	[ "$changed" = 1 ] && uci commit firewall && /etc/init.d/firewall reload >/dev/null 2>&1
+	return 0
+}
+
+sync_dns() {
+	local name ip
+	config_get name main name llm
+	# The first IPv4 address the gateway listens on, from the zones it names: the same answer
+	# serve computes, so the name never points at an address the gateway does not serve.
+	ip=$("$PROG" addresses 2>/dev/null | sed -n 's/^\([0-9.]*\):[0-9]*$/\1/p' | grep -v '^127\.' | head -n 1)
+	[ -n "$ip" ] || return 0
+	if [ "$(uci -q get dhcp.llm_gateway.name)" != "$name" ] || [ "$(uci -q get dhcp.llm_gateway.ip)" != "$ip" ]; then
+		uci -q batch <<-EOT
+			set dhcp.llm_gateway='domain'
+			set dhcp.llm_gateway.name='$name'
+			set dhcp.llm_gateway.ip='$ip'
+			commit dhcp
+		EOT
+		/etc/init.d/dnsmasq reload >/dev/null 2>&1
+	fi
+	return 0
+}
+
+start_service() {
+	local enabled
+	config_load llm-gateway
+	config_get_bool enabled main enabled 0
+	if [ "$enabled" != 1 ]; then
+		logger -t llm-gateway "disabled; set llm-gateway.main.enabled=1"
+		return 0
+	fi
+	sync_firewall
+	sync_dns
+	procd_open_instance
+	procd_set_param command "$PROG" serve
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param file /etc/config/llm-gateway
+	procd_close_instance
+}
+
+service_triggers() {
+	procd_add_reload_trigger llm-gateway
+	procd_add_interface_trigger "interface.*.up" lan /etc/init.d/llm-gateway restart
+}
+
+reload_service() {
+	restart
+}

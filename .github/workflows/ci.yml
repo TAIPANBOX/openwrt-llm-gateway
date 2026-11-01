@@ -1,0 +1,49 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./... -count=1 -race -coverprofile=cover.out
+      - run: go tool cover -func=cover.out | tail -1
+      - run: ./scripts/gate-scenarios-bound.sh
+      - run: ./scripts/gate-no-wildcard.sh
+      - run: ./scripts/gates-have-teeth.sh
+      - run: python3 scripts/mutate.py
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goarch: arm64, goarm: "", apk: aarch64_cortex-a53 }
+          - { goarch: arm, goarm: "7", apk: arm_cortex-a7_neon-vfpv4 }
+          - { goarch: amd64, goarm: "", apk: x86_64 }
+          - { goarch: mipsle, goarm: "", apk: mipsel_24kc }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: build
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} GOARM=${{ matrix.goarm }} GOMIPS=softfloat \
+            go build -trimpath -ldflags "-s -w -X main.version=0.1.0" -o llm-gateway.${{ matrix.goarch }} .
+          ls -l llm-gateway.${{ matrix.goarch }}
+      - name: package
+        run: ./mkapk.sh llm-gateway.${{ matrix.goarch }} 0.1.0 ${{ matrix.apk }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: llm-gateway-${{ matrix.apk }}
+          path: llm-gateway-*.apk

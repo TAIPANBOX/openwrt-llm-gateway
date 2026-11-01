@@ -1,0 +1,8 @@
+gofmt clean
+vet clean
+ok  	github.com/TAIPANBOX/openwrt-llm-gateway	1.525s	coverage: 86.1% of statements
+OK: 26 scenarios bound; 25 bound tests ran and passed
+OK: no wildcard listen address or CORS origin in 10 source files
+teeth: 14 ok, 0 bad
+mutants: 26 of 26 caught
+35

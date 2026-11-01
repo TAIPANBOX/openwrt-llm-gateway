@@ -1,0 +1,24 @@
+## llm-gateway: the house's model servers behind one name, a key per client, and the firewall.
+##
+## Off until a backend and a client exist. Then:
+##   uci set llm-gateway.main.enabled=1 && uci commit llm-gateway && service llm-gateway restart
+config gateway 'main'
+	option enabled '0'
+	## Zones whose addresses it listens on (HTTPS). Never wan.
+	list zone 'lan'
+	option port '8760'
+	## Plain HTTP on 127.0.0.1 only, for agents on the router itself. A key is still required.
+	option loopback_port '8761'
+	## dnsmasq answers <name>.<domain> (llm.lan) with the LAN address.
+	option name 'llm'
+
+## A model server in the house that speaks the OpenAI protocol. Its address must be private,
+## unique-local, loopback or link-local, and its URL ends in /v1. Put the box in the models zone
+## (llm-gateway models-zone NETWORK) so nothing but the router reaches it.
+#config backend 'desktop'
+#	option url 'http://10.60.0.10:11434/v1'
+#	list model 'qwen3:14b'
+#	option key_file ''
+
+## Clients are added with: llm-gateway client add NAME -model M
+## The key is printed once; this file keeps only its SHA-256.

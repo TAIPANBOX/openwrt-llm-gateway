@@ -1,0 +1,3 @@
+    models_zone_test.go:20: models-zone exited 2: usage:
+--- FAIL: TestModelsZoneIsIsolatedByConstruction (0.00s)
+--- PASS: TestModelsZoneRefusesANetworkThatIsAlreadyZoned (0.00s)
