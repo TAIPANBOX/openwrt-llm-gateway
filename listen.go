@@ -128,4 +128,3 @@ func parseInterfaceStatus(b []byte) ([]netip.Addr, error) {
 	}
 	return out, nil
 }
-

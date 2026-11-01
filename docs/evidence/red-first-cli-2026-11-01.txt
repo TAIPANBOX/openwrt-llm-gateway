@@ -1,0 +1,6 @@
+    cli_test.go:63: the output does not give the base URLs:
+--- FAIL: TestClientAddShowsTheKeyOnceAndStoresOnlyItsHash (0.00s)
+    cli_test.go:95: existing name: accepted:
+--- FAIL: TestClientAddRefusesWhatItCannotWriteSafely (0.00s)
+    cli_test.go:144: serve asked to listen on "0.0.0.0:8760", want the LAN address and loopback only
+--- FAIL: TestServeBindsOnlyTheZoneAddressesAndLoopback (5.00s)

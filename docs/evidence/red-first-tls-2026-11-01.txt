@@ -1,0 +1,6 @@
+    tls_test.go:47: stat /var/folders/gb/j93d3cmn3wngwn_7j39136xw0000gn/T/TestCertificatesAreCreatedOnceAndKeptPrivate347479497/001/ca.key: no such file or directory
+--- FAIL: TestCertificatesAreCreatedOnceAndKeptPrivate (0.00s)
+    tls_test.go:83: open /var/folders/gb/j93d3cmn3wngwn_7j39136xw0000gn/T/TestHouseCACannotVouchForOtherNames32971035/001/ca.key: no such file or directory
+--- FAIL: TestHouseCACannotVouchForOtherNames (0.00s)
+    tls_test.go:151: the certificate was not renewed near its end
+--- FAIL: TestLeafIsReissuedSilentlyUnderTheSameCA (0.00s)
