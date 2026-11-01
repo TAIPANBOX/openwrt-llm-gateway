@@ -55,7 +55,10 @@ FROM_CI=<run id of ci.yml on main> ./scripts/publish-feed.sh
 4. **Gates.** [scripts/gate-feed.sh](../scripts/gate-feed.sh) and
    [scripts/teeth-feed.sh](../scripts/teeth-feed.sh) run before anything is pushed.
 5. **Publishing.** The `gh-pages` branch is replaced by one fresh commit holding only the feed,
-   with `.nojekyll`; GitHub Pages serves it. The script waits until the published key and every
+   with `.nojekyll`; GitHub Pages serves it. The first push to `gh-pages` can turn Pages on by
+   itself, so a 409 from GitHub when the script turns Pages on means it is already on; either way
+   the script reads the source back until it says `gh-pages /`
+   (`TestPagesStepTakesAlreadyEnabledAsOn`), then waits until the published key and every
    published index are byte-identical to the ones it built.
 
 The key is used on one Mac, never in CI. A key held as a repository secret is readable by anyone

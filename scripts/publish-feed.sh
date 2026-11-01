@@ -19,8 +19,9 @@
 #   2. build-feed.sh: the run's packages, required to be built from HEAD's tree, signed on this Mac
 #   3. gate-feed.sh and teeth-feed.sh against the result, before anything is pushed
 #   4. replaces the gh-pages branch with one fresh commit holding only the feed, and pushes it
-#   5. turns GitHub Pages on for that branch if it is not, and waits until the published key and
-#      every published index are byte-identical to the ones just built
+#   5. turns GitHub Pages on for that branch if it is not (a 409 means the push already did), reads
+#      the source back until it says gh-pages /, and waits until the published key and every
+#      published index are byte-identical to the ones just built
 #
 # The packages are not built from this working tree: they are the CI run's, tied to it by the
 # tree check. What this tree contributes is the scripts and the landing page, which is why it must
@@ -86,19 +87,7 @@ git -C "$WT" push -qf origin HEAD:gh-pages
 echo "==> pushed gh-pages"
 
 echo "==> GitHub Pages"
-# gh prints the 404 body on standard output, so the exit status decides, not the text.
-if ! src=$(gh api "repos/$REPO/pages" --jq '"\(.source.branch) \(.source.path)"' 2>/dev/null); then
-	src=none
-fi
-case "$src" in
-	"gh-pages /") echo "Pages already serves gh-pages /" ;;
-	none)
-		gh api -X POST "repos/$REPO/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/' >/dev/null
-		echo "Pages turned on for gh-pages /" ;;
-	*)
-		gh api -X PUT "repos/$REPO/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/' >/dev/null
-		echo "Pages moved from '$src' to gh-pages /" ;;
-esac
+pages_on_gh_pages
 
 echo "==> waiting for $BASE_URL to serve this build"
 LIVE=$ROOT/build/feed/live

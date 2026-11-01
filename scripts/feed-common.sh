@@ -96,3 +96,62 @@ require_main_tree() {
 		fi
 	fi
 }
+
+# pages_source: what the Pages site serves, as "<branch> <path>", or "none" when there is no site.
+# gh prints an HTTP error's body on standard output and "gh: <message> (HTTP <code>)" on standard
+# error; only a 404 means no site, and any other failure stops here.
+pages_source() {
+	err=$(mktemp)
+	if out=$(gh api "repos/$REPO/pages" --jq '"\(.source.branch) \(.source.path)"' 2>"$err"); then
+		rm -f "$err"
+		echo "$out"
+	elif grep -q '(HTTP 404)' "$err"; then
+		rm -f "$err"
+		echo none
+	else
+		echo "publish-feed.sh: reading the Pages site failed:" >&2
+		cat "$err" >&2
+		rm -f "$err"
+		return 1
+	fi
+}
+
+# pages_on_gh_pages: GitHub Pages serves the gh-pages branch from its root, read back from GitHub.
+#
+# The first push to gh-pages can turn Pages on by itself. Then, for a while, reading the site says
+# 404 because it is still being created, and turning it on says 409 because it is already on. So a
+# 409 counts as on, and whatever was done, the source is read again until it says gh-pages /. This
+# ends at PAGES_TRIES reads, PAGES_SLEEP seconds apart.
+pages_on_gh_pages() {
+	tries=0
+	while :; do
+		src=$(pages_source) || return 1
+		case "$src" in
+		"gh-pages /")
+			echo "Pages serves gh-pages /"
+			return 0
+			;;
+		none)
+			out=$(gh api -X POST "repos/$REPO/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/' 2>&1) && rc=0 || rc=$?
+			if [ "$rc" = 0 ]; then
+				echo "Pages turned on for gh-pages /"
+			elif printf '%s\n' "$out" | grep -q '(HTTP 409)'; then
+				echo "Pages is already on (HTTP 409), turned on by the push; reading it again"
+			else
+				printf 'publish-feed.sh: turning Pages on failed:\n%s\n' "$out" >&2
+				return 1
+			fi
+			;;
+		*)
+			gh api -X PUT "repos/$REPO/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/' >/dev/null || return 1
+			echo "Pages moved from '$src' to gh-pages /"
+			;;
+		esac
+		tries=$((tries + 1))
+		[ "$tries" -lt "${PAGES_TRIES:-20}" ] || {
+			echo "publish-feed.sh: Pages does not serve gh-pages / after $tries reads (last: $src)" >&2
+			return 1
+		}
+		sleep "${PAGES_SLEEP:-6}"
+	done
+}

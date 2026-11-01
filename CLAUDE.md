@@ -100,7 +100,9 @@ Language: Go, stdlib only. Testing tier: T3 (authorization decisions whose failu
 
 The feed is signed on the Mac that holds the key, never in CI ([docs/FEED.md](docs/FEED.md)):
 `FROM_CI=<ci.yml run id on main> scripts/publish-feed.sh`. It builds nothing: it signs the run's
-packages, gates them, and replaces `gh-pages` with one commit holding only the feed. A change to
+packages, gates them, and replaces `gh-pages` with one commit holding only the feed. Its Pages step
+takes a 409 as Pages already on (the push turns it on) and reads the source back until it says
+`gh-pages /` (test: `TestPagesStepTakesAlreadyEnabledAsOn`, teeth in `scripts/gates-have-teeth.sh`). A change to
 the package's content raises `PKGREL` in `mkapk.sh`: one name, one content.
 
 A new test is run red first against a stub or a mutant; the red output goes to `docs/evidence/`.
