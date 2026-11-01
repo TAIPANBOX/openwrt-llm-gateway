@@ -1,0 +1,51 @@
+14:56:46 build x86_64 and stage the package
+14:56:47 ship to forge
+14:56:47 build the apk on forge
+llm-gateway-0.1.0-r1.apk
+14:56:50 vlab up
+r1         mgmt 10.98.0.11  wan net
+14:57:28 router: networks, zones, the package
+  * Command failed: ubus call service delete { "name": "llm-gateway" } (Not found)
+  Executing llm-gateway-0.1.0-r1.post-install
+OK: 27.0 MiB in 183 packages
+Network models is now the zone models: only the router reaches it.
+setup done
+14:57:49 clients: model box (static), laptop and guest (DHCP from r1)
+udhcpc: started, v1.37.0
+udhcpc: broadcasting discover
+udhcpc: broadcasting discover
+udhcpc: broadcasting select for 192.168.70.124, server 192.168.70.1
+udhcpc: lease of 192.168.70.124 obtained from 192.168.70.1, lease time 3600
+laptop     client  home      02:ef:00:00:70:01  192.168.70.124/24  via 192.168.70.1    cable up
+udhcpc: started, v1.37.0
+udhcpc: broadcasting discover
+udhcpc: broadcasting discover
+udhcpc: broadcasting select for 192.168.71.123, server 192.168.71.1
+udhcpc: lease of 192.168.71.123 obtained from 192.168.71.1, lease time 3600
+guest      client  guestw    02:ef:00:00:71:01  192.168.71.123/24  via 192.168.71.1    cable up
+14:57:58 --- evidence
+  r1 listens: tcp        0      0 192.168.70.1:8760       0.0.0.0:*               LISTEN      
+  r1 listens: tcp        0      0 127.0.0.1:8761          0.0.0.0:*               LISTEN      
+  r1: 0.1.0
+  r1: llm-gateway-0.1.0-r1 - The house model servers behind one name on the router: a key per client, HTTPS under a name-constrained house CA, zone rules and a journal without content.
+14:57:59 --- lan_reaches_the_model_through_the_gateway
+  laptop -> https://llm.lan:8760 with its key: {"id": "chatcmpl-standin", "object": "chat.completion", "model": "stand-in", "choices": [{"index": 0, "message": {"role": "assistant", "content": "stand-in answer"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}}
+  laptop -> https://llm.lan:8760 with no key: 401
+14:57:59 PASS lan_reaches_the_model_through_the_gateway
+14:57:59 --- lan_cannot_reach_the_model_box
+  control, r1 -> model box: {"ok": true}
+  laptop -> model box directly: 000
+14:58:00 PASS lan_cannot_reach_the_model_box
+14:58:00 --- guest_cannot_reach_the_port
+  control, guest -> internet: 301
+  guest -> its router address :8760: 000; -> the home address :8760: 000
+14:58:01 PASS guest_cannot_reach_the_port
+14:58:01 --- models_zone_has_no_internet
+  control, laptop -> internet: 301; model box -> internet: 000
+14:58:01 PASS models_zone_has_no_internet
+14:58:01 --- journal on r1
+  {"time":"2026-11-01T14:57:59.639019931Z","source":"192.168.70.124","client":"laptop","route":"/v1/chat/completions","model":"stand-in","backend":"standin","status":200,"ms":1,"in":12,"out":3}
+  {"time":"2026-11-01T14:57:59.862727178Z","source":"192.168.70.124","route":"/v1/models","status":401,"reason":"no key","ms":0}
+14:58:01 checks: 4 passed, 0 failed
+14:58:01 take the lab down
+exit=0
