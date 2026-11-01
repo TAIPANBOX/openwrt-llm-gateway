@@ -129,7 +129,8 @@ openwrt-mcp: the package creates the `hermes` client and writes its key into `ke
 
 ## Later, not v1
 
-LuCI app (backends, clients with show-once keys, journal). Failover between local backends.
+LuCI app (backends, clients with show-once keys, journal). `/v1/models/{id}` (Hermes asks for it
+at start, measured on a Flint 2 2026-11-01; it now gets 404 and carries on). Failover between local backends.
 A cloud backend, only per client and only when the owner turns it on. Our own phone model server.
 A LuCI helper that runs a model in the admin's browser (WebGPU or Chrome's Prompt API).
 
