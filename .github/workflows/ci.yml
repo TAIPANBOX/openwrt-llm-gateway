@@ -43,7 +43,12 @@ jobs:
           ls -l llm-gateway.${{ matrix.goarch }}
       - name: package
         run: ./mkapk.sh llm-gateway.${{ matrix.goarch }} 0.1.0 ${{ matrix.apk }}
+      # The git tree the package was built from, which scripts/build-feed.sh requires to be the
+      # tree it signs from: a pull request builds a merge commit, not its head.
+      - run: git rev-parse 'HEAD^{tree}' > source-tree
       - uses: actions/upload-artifact@v7
         with:
           name: llm-gateway-${{ matrix.apk }}
-          path: llm-gateway-*.apk
+          path: |
+            llm-gateway-*.apk
+            source-tree
