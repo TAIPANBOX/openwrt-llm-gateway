@@ -1,0 +1,6 @@
+.DS_Store
+/llm-gateway
+/llm-gateway.*
+/build/
+*.apk
+*.ipk
