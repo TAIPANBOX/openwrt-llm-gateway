@@ -1,0 +1,55 @@
+# scripts/vlab-feed.sh, run 2, 2026-11-01: the trial feed from CI run 41323007732 (2281c8a)
+15:51:44 bundle: the x86_64 feed, a copy with one byte of the package changed, the key and another
+15:51:44   llm-gateway-0.1.0-r2.apk sha256 4f7fb3815bf6d08106187c379628e7cc6b4e3a94f4e3a20d69edcc0381f1161a, corrupted at byte 1679506 of 3359012
+15:51:44 ship to forge
+15:51:45 vlab up
+r1         mgmt 10.98.0.11  wan net
+15:52:10 router: the bundle into /tmp/feedtest
+15:52:11 router: the checks, with OpenWrt's own apk
+  apk 3.0.5, OpenWrt 25.12.5, x86_64
+--- refused_without_the_key
+    WARNING: opening /tmp/feedtest/good/25.12/x86_64/packages.adb: UNTRUSTED signature
+    WARNING: opening /tmp/feedtest/good/25.12/x86_64/packages.adb: UNTRUSTED signature
+    ERROR: unable to select packages:
+      llm-gateway (no such package):
+        required by: world[llm-gateway]
+PASS refused_without_the_key
+--- installs_from_the_signed_index
+    sha256 of /etc/apk/keys/llm-gateway.pem: d5151976fb774d291b4954cce7ea86cf4cf25de6c616c3fbbf05fd5a531457fa
+    (1/1) Installing llm-gateway (0.1.0-r2)
+      Executing llm-gateway-0.1.0-r2.post-install
+      * Command failed: ubus call service delete { "name": "llm-gateway" } (Not found)
+    OK: 27.0 MiB in 183 packages
+    llm-gateway policy:
+      0.1.0-r2:
+        lib/apk/db/installed
+        /tmp/feedtest/good/25.12/x86_64/packages.adb
+    llm-gateway version: 0.1.0
+PASS installs_from_the_signed_index
+--- installed_files_belong_to_root
+    -rw-r--r--    1 0        0             1098 Nov  1 15:50 /etc/config/llm-gateway
+    -rwxr-xr-x    1 0        0             2701 Nov  1 15:50 /etc/init.d/llm-gateway
+    -rwxr-xr-x    1 0        0          8052896 Nov  1 15:50 /usr/bin/llm-gateway
+    13 paths, 0 not 0:0
+PASS installed_files_belong_to_root
+--- refused_with_another_key
+    WARNING: opening /tmp/feedtest/good/25.12/x86_64/packages.adb: UNTRUSTED signature
+    WARNING: opening /tmp/feedtest/good/25.12/x86_64/packages.adb: UNTRUSTED signature
+    ERROR: unable to select packages:
+      llm-gateway (no such package):
+        required by: world[llm-gateway]
+PASS refused_with_another_key
+--- refused_when_the_package_is_corrupted
+    (1/1) Installing llm-gateway (0.1.0-r2)
+    ERROR: llm-gateway-0.1.0-r2: file integrity error
+    1 error; 19.3 MiB in 182 packages
+PASS refused_when_the_package_is_corrupted
+15:52:17 PASS refused_without_the_key
+15:52:17 PASS installs_from_the_signed_index
+15:52:17 PASS installed_files_belong_to_root
+15:52:17 PASS refused_with_another_key
+15:52:17 PASS refused_when_the_package_is_corrupted
+15:52:17 checks: 5 passed, 0 failed
+15:52:17 take the lab down
+  vlab check clean: clean
+exit 0
