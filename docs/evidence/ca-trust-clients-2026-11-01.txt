@@ -1,0 +1,135 @@
+# The house CA, trusted by real clients, 2026-11-01
+
+Run on the signing Mac (macOS, curl 8.7.1, Node v26.12.1, Python 3.15.2 on OpenSSL 4.1.0), against
+this repository's own code at 558c45f: ensureCerts makes a fresh house CA
+and the gateway's certificate for llm.lan and 127.0.0.1, NewGateway serves it over TLS on
+127.0.0.1, and each client is asked to trust only that CA, the way the README says. The two Go tests
+that did it are at the end; they were run from a copy of the tree with
+  FPDIR=<dir> go test -count=1 -run TestZZPrintCert .
+  REPORT=<file> go test -count=1 -run TestZZClientsTrustTheHouseCA .
+
+## 1. The fingerprint `llm-gateway cert` prints, and the one openssl prints for the file
+
+$ llm-gateway cert | head -1
+SHA-256 fingerprint: FA:70:06:0A:9B:C0:CA:82:97:F0:34:9B:60:3B:C0:05:3B:FE:39:20:CA:3B:E2:48:F8:81:7B:46:FB:B6:CE:9E
+$ llm-gateway cert | sed -n '/BEGIN/,/END/p' > llm-gateway-ca.crt
+$ openssl x509 -in llm-gateway-ca.crt -noout -fingerprint -sha256
+sha256 Fingerprint=FA:70:06:0A:9B:C0:CA:82:97:F0:34:9B:60:3B:C0:05:3B:FE:39:20:CA:3B:E2:48:F8:81:7B:46:FB:B6:CE:9E
+$ openssl x509 -in llm-gateway-ca.crt -noout -ext nameConstraints
+X509v3 Name Constraints: critical
+    Permitted:
+      DNS:llm.lan
+      IP:10.0.0.0/255.0.0.0
+      IP:172.16.0.0/255.240.0.0
+      IP:192.168.0.0/255.255.0.0
+      IP:127.0.0.0/255.0.0.0
+      IP:FC00:0:0:0:0:0:0:0/FE00:0:0:0:0:0:0:0
+
+## 2. Clients without the CA, and with it (each line: what ran, whether it succeeded, what it printed)
+
+curl, no CA                                                exit=false  curl: (60) SSL certificate problem: unable to get local issuer certificate
+More details here: https://curl.se/docs/sslcerts.html
+
+curl failed to verify the legi...
+curl --cacert, https://llm.lan                             exit=true  ok
+curl --cacert + key, /v1/models                            exit=true  {"object":"list","data":[]}
+node fetch, no CA                                          exit=false  Error: unable to verify the first certificate; if the root CA is installed locally, try running Node.js with --use-system-ca
+node fetch, NODE_EXTRA_CA_CERTS                            exit=true  ok
+node fetch, NODE_EXTRA_CA_CERTS, a public site still       exit=true  200
+python urllib, no CA                                       exit=false  Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.15/3.15.2/Frameworks/Python.framework/Versions/3.15/lib/python3.15/urllib/request.py", ...
+python urllib, SSL_CERT_FILE                               exit=true  ok
+
+## The tests
+
+package main
+
+import (
+	"bytes"
+	"net/netip"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestZZPrintCert(t *testing.T) {
+	dir := os.Getenv("FPDIR")
+	if _, err := ensureCerts(dir, []string{"llm.lan"}, []netip.Addr{netip.MustParseAddr("192.168.1.1")}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "llm-gateway")
+	os.WriteFile(cfg, []byte("config gateway 'main'\n\toption cert_dir '"+dir+"'\n"), 0o644)
+	e := defaultEnv()
+	e.configPath = cfg
+	var out, errb bytes.Buffer
+	if run([]string{"cert"}, &out, &errb, e) != 0 {
+		t.Fatal(errb.String())
+	}
+	os.WriteFile(filepath.Join(dir, "cert-output.txt"), out.Bytes(), 0o644)
+}
+
+package main
+
+import (
+	"crypto/tls"
+	"fmt"
+	"net"
+	"net/http"
+	"net/netip"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// Serves /health and /v1/models under a fresh house CA on 127.0.0.1 and asks real clients to trust
+// only that CA through the ways the README names.
+func TestZZClientsTrustTheHouseCA(t *testing.T) {
+	dir := t.TempDir()
+	c, err := ensureCerts(dir, []string{"llm.lan"}, []netip.Addr{netip.MustParseAddr("127.0.0.1")}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := filepath.Join(dir, "llm-gateway-ca.crt")
+	os.WriteFile(ca, c.CAPEM, 0o644)
+	key := "house-test-key"
+	cfg := &Config{Clients: []*Client{{Name: "laptop", KeyHash: HashKey(key), Models: []string{"*"}}}}
+	gw, err := NewGateway(cfg, Options{Hosts: []string{"llm.lan", "127.0.0.1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	srv := &http.Server{Handler: gw}
+	go srv.Serve(tls.NewListener(ln, serverTLSConfig(c)))
+	defer srv.Close()
+	u := fmt.Sprintf("https://127.0.0.1:%d", port)
+	var report strings.Builder
+	runc := func(label string, env []string, name string, args ...string) {
+		cmd := exec.Command(name, args...)
+		cmd.Env = append(os.Environ(), env...)
+		out, err := cmd.CombinedOutput()
+		s := strings.TrimSpace(string(out))
+		if len(s) > 160 {
+			s = s[:160] + "..."
+		}
+		fmt.Fprintf(&report, "%-58s exit=%v  %s\n", label, err == nil, s)
+	}
+	runc("curl, no CA", nil, "curl", "-sS", "https://llm.lan:"+fmt.Sprint(port)+"/health", "--resolve", fmt.Sprintf("llm.lan:%d:127.0.0.1", port))
+	runc("curl --cacert, https://llm.lan", nil, "curl", "-sS", "--cacert", ca, "https://llm.lan:"+fmt.Sprint(port)+"/health", "--resolve", fmt.Sprintf("llm.lan:%d:127.0.0.1", port))
+	runc("curl --cacert + key, /v1/models", nil, "curl", "-sS", "--cacert", ca, "-H", "Authorization: Bearer "+key, "https://llm.lan:"+fmt.Sprint(port)+"/v1/models", "--resolve", fmt.Sprintf("llm.lan:%d:127.0.0.1", port))
+	js := `fetch(process.argv[1]).then(r=>r.text()).then(t=>console.log(t)).catch(e=>{console.log(String(e.cause||e));process.exit(1)})`
+	runc("node fetch, no CA", nil, "node", "-e", js, u+"/health")
+	runc("node fetch, NODE_EXTRA_CA_CERTS", []string{"NODE_EXTRA_CA_CERTS=" + ca}, "node", "-e", js, u+"/health")
+	runc("node fetch, NODE_EXTRA_CA_CERTS, a public site still", []string{"NODE_EXTRA_CA_CERTS=" + ca}, "node", "-e", `fetch("https://example.com").then(r=>console.log(r.status)).catch(e=>{console.log(String(e.cause||e));process.exit(1)})`)
+	py := `import sys,urllib.request;print(urllib.request.urlopen(sys.argv[1]).read().decode())`
+	runc("python urllib, no CA", nil, "python3", "-I", "-c", py, u+"/health")
+	runc("python urllib, SSL_CERT_FILE", []string{"SSL_CERT_FILE=" + ca}, "python3", "-I", "-c", py, u+"/health")
+	os.WriteFile(os.Getenv("REPORT"), []byte(report.String()), 0o644)
+}
