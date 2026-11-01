@@ -4,7 +4,8 @@
 # adds the key once and apk then checks every package; with another key or a damaged package it
 # refuses. The ownership scenario comes from a defect measured the same day (docs/evidence/
 # red-first-feed-2026-11-01.txt): the r1 packages installed /usr/bin/llm-gateway and
-# /etc/init.d/llm-gateway owned by nobody.
+# /etc/init.d/llm-gateway owned by nobody. The Pages scenario comes from the first publication, the
+# same day, which stopped after its push when GitHub answered 409 to turning Pages on.
 #
 # Bound to Go tests, or to the checks of scripts/vlab-feed.sh, which installs from the feed on a
 # real OpenWrt 25.12 router in the virtual lab:
@@ -65,3 +66,13 @@ Feature: the feed's key
     Given the private half lives only in the keychain of the Mac that signs
     When git lists the files it would commit
     Then none of them holds a private key and none is named *.private.pem
+
+Feature: publishing the feed
+
+  # bound to: TestPagesStepTakesAlreadyEnabledAsOn
+  Scenario: publishing goes on when the push has already turned GitHub Pages on
+    Given the feed was just pushed to gh-pages and GitHub turned Pages on by itself
+    When publish-feed.sh asks GitHub to turn Pages on and gets 409, already enabled
+    Then it takes Pages as on, reads the source back until it says gh-pages /
+    And goes on to wait until the published key and indexes match the build
+    And any other error from GitHub stops it with that error

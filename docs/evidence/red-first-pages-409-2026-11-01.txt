@@ -1,0 +1,60 @@
+# Red first: publish-feed.sh and a 409 from GitHub Pages, 2026-11-01
+
+# The first publication of the feed stopped after its push: reading the Pages site said 404, turning
+# it on said 409 (already enabled), because the push to gh-pages had turned Pages on by itself.
+#
+# Below: TestPagesStepTakesAlreadyEnabledAsOn against the Pages step of publish-feed.sh at f1736f1,
+# moved unchanged into pages_on_gh_pages in scripts/feed-common.sh so the test can call it, run under
+# set -eu as publish-feed.sh runs it, gh replaced by a stub that answers as gh does.
+#   go test -count=1 -run '^TestPagesStepTakesAlreadyEnabledAsOn$' -v .
+# Four cases red: the 409 of that run stops the step (the_push_turned_it_on, still_being_created),
+# a site that never serves gh-pages is not named (never_serves_gh-pages), and a failed read other
+# than 404 is taken as "no site" and Pages is turned on anyway (the_read_fails).
+
+=== RUN   TestPagesStepTakesAlreadyEnabledAsOn
+=== RUN   TestPagesStepTakesAlreadyEnabledAsOn/already_on
+=== RUN   TestPagesStepTakesAlreadyEnabledAsOn/the_push_turned_it_on
+    pages_test.go:120: succeeded=false, want true
+        stdout: 
+        stderr: gh: GitHub Pages is already enabled. (HTTP 409)
+=== RUN   TestPagesStepTakesAlreadyEnabledAsOn/still_being_created
+    pages_test.go:120: succeeded=false, want true
+        stdout: 
+        stderr: gh: GitHub Pages is already enabled. (HTTP 409)
+=== RUN   TestPagesStepTakesAlreadyEnabledAsOn/turned_on
+=== RUN   TestPagesStepTakesAlreadyEnabledAsOn/moved
+=== RUN   TestPagesStepTakesAlreadyEnabledAsOn/turning_on_refused
+=== RUN   TestPagesStepTakesAlreadyEnabledAsOn/never_serves_gh-pages
+    pages_test.go:123: 1 POST and 0 PUT, want 4 and 0
+    pages_test.go:129: stderr does not say "does not serve gh-pages /": gh: GitHub Pages is already enabled. (HTTP 409)
+=== RUN   TestPagesStepTakesAlreadyEnabledAsOn/the_read_fails
+    pages_test.go:120: succeeded=true, want false
+        stdout: Pages turned on for gh-pages /
+        
+        stderr: 
+--- FAIL: TestPagesStepTakesAlreadyEnabledAsOn (0.58s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/already_on (0.15s)
+    --- FAIL: TestPagesStepTakesAlreadyEnabledAsOn/the_push_turned_it_on (0.06s)
+    --- FAIL: TestPagesStepTakesAlreadyEnabledAsOn/still_being_created (0.06s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/turned_on (0.05s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/moved (0.06s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/turning_on_refused (0.07s)
+    --- FAIL: TestPagesStepTakesAlreadyEnabledAsOn/never_serves_gh-pages (0.06s)
+    --- FAIL: TestPagesStepTakesAlreadyEnabledAsOn/the_read_fails (0.06s)
+FAIL
+FAIL	github.com/TAIPANBOX/openwrt-llm-gateway	0.875s
+FAIL
+
+# After the fix (this branch): the same command
+
+--- PASS: TestPagesStepTakesAlreadyEnabledAsOn (0.86s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/already_on (0.06s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/the_push_turned_it_on (0.09s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/still_being_created (0.12s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/turned_on (0.10s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/moved (0.12s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/turning_on_refused (0.09s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/never_serves_gh-pages (0.20s)
+    --- PASS: TestPagesStepTakesAlreadyEnabledAsOn/the_read_fails (0.08s)
+PASS
+ok  	github.com/TAIPANBOX/openwrt-llm-gateway	0.989s

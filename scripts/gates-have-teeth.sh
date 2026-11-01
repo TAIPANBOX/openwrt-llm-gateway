@@ -114,5 +114,18 @@ expect "red:--- FAIL: $S/docker_down" "sign on: Docker is not asked first" sh -c
 fresh; perl -i -pe 's/^(\t+)echo "feed: FEED_SIGN_ON=forge: the container runs on/$1true "/' "$TMP/r/scripts/feed-common.sh"
 expect "red:--- FAIL: $S/forge" "sign on: forge without a word in the log" sh -c "$(KT $S)"
 
+# Publishing's Pages step: a 409 from GitHub is Pages already on, and the source is read back
+P=TestPagesStepTakesAlreadyEnabledAsOn
+fresh; expect green "pages: the step as written" sh -c "$(KT $P)"
+fresh; sed -i.bak "s/grep -q '(HTTP 409)'/grep -q '(HTTP 499)'/" "$TMP/r/scripts/feed-common.sh"
+grep -q "(HTTP 499)" "$TMP/r/scripts/feed-common.sh" || { echo "BAD  the 409 plant did not apply"; exit 1; }
+expect "red:--- FAIL: $P/the_push_turned_it_on" "pages: a 409 stops publishing" sh -c "$(KT $P)"
+fresh; sed -i.bak "s/elif grep -q '(HTTP 404)' \"\$err\"; then/elif true; then/" "$TMP/r/scripts/feed-common.sh"
+grep -q "elif true; then" "$TMP/r/scripts/feed-common.sh" || { echo "BAD  the read-failure plant did not apply"; exit 1; }
+expect "red:--- FAIL: $P/the_read_fails" "pages: any failed read taken as no site" sh -c "$(KT $P)"
+fresh; sed -i.bak 's/turned on by the push; reading it again"$/turned on by the push"; return 0/' "$TMP/r/scripts/feed-common.sh"
+grep -q 'turned on by the push"; return 0' "$TMP/r/scripts/feed-common.sh" || { echo "BAD  the no-read-back plant did not apply"; exit 1; }
+expect "red:--- FAIL: $P/never_serves_gh-pages" "pages: a 409 taken as on without reading it back" sh -c "$(KT $P)"
+
 echo "teeth: $pass ok, $bad bad"
 [ $bad = 0 ]
