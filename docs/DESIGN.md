@@ -1,6 +1,7 @@
 # openwrt-llm-gateway: design
 
-Status: built 2026-11-01 (v0.1.0, not released). Working name; the package and binary are `llm-gateway`.
+Status: released 2026-11-01, `llm-gateway` 0.1.0-r2 in its own signed apk feed ([FEED.md](FEED.md)).
+The package and the binary are `llm-gateway`.
 
 Provenance: anything unmarked is `@claude` (my reading or plan, re-check before relying on it).
 `@measured <how> <date>` is a run. `@decided <date>` is the owner's decision, paraphrased.
@@ -68,9 +69,9 @@ config client 'hermes'
 	option concurrent '2'
 ```
 
-Models are listed per backend, not discovered from its `/v1/models`: a model the owner did not
-name never appears, and a model served by two backends is a configuration error until failover
-exists. The journal is `/tmp/llm-gateway/journal.log` (RAM, 0600, one rotation at 1 MiB), so the
+Models are listed per backend, never discovered from its `/v1/models`: a model the owner did not
+name never appears, and each model is served by exactly one backend (a second is a configuration
+error). The journal is `/tmp/llm-gateway/journal.log` (RAM, 0600, one rotation at 1 MiB), so the
 flash takes none of its writes.
 
 Keys: 32 random bytes, base64url, prefix `llmgw_`. Stored as SHA-256 (a high-entropy token needs no
@@ -91,10 +92,11 @@ base URL and the certificate fingerprint once.
    fw4 rule opens the port only from the named zones.
 5. **The journal never holds a prompt, a completion or a key.** Per request: time, client, model,
    backend, status, latency, token counts from `usage`.
-6. **A model box in the `models` zone is reachable only from the router.** The package's fw4
-   include rejects forwarding from every other zone into `models`; internet for that zone is off
-   unless the owner turns it on (model downloads).
-7. **Nothing leaves the house.** No cloud backend type exists in v1. A backend whose host is not,
+6. **A model box in the `models` zone is reachable only from the router.** `llm-gateway
+   models-zone NETWORK` makes that zone: input refused but DHCP and DNS, forward refused, and no
+   forwarding into or out of it, so every other zone is rejected on the way in; internet for the
+   zone comes only with `-internet` (model downloads).
+7. **Nothing leaves the house.** Every backend is in the house. A backend whose host is not,
    or does not resolve only to, a private, link-local or loopback address is refused, checked at
    load and again in the dialer on every connection (a name that later resolves outside is caught).
 
@@ -106,9 +108,12 @@ Gate from the survey: CI fails if the source contains `0.0.0.0`, `[::]:` as a li
 Tier T3: these are authorization decisions whose failure is silent. Layers 1 to 9 of the house
 testing rule apply: red-first, Gherkin in `features/` bound both ways, gates with teeth, mutation
 testing of invariants 1 to 4 and 7, coverage reported with it.
-Real-firmware checks run in OpenWrt's rootfs container in CI (as openwrt-mcp does), and the
-end-to-end run is on vlab: a router VM, a `models` segment with a stand-in OpenAI server, a LAN
-client and a guest client.
+`@measured docs/evidence/ 2026-11-01`: every test red first against a stub or a mutant, then
+green; 26 of 26 mutants caught; on OpenWrt 25.12.5 in vlab (a router VM, a `models` segment with
+a stand-in OpenAI server, a LAN client and a guest client) the four firewall checks passed in
+each of four runs and the signed feed installed with OpenWrt's own apk, 5 of 5 checks; on a
+GL.iNet Flint 2, Hermes paired itself and answered through the gateway, and HTTPS from a laptop
+on the LAN answered 200 with a key, 401 without one ([flint2-hermes-2026-11-01.md](evidence/flint2-hermes-2026-11-01.md)).
 
 ## Commands
 
@@ -119,31 +124,31 @@ so the name never points where the gateway does not listen) and `models-zone NET
 
 ## Packaging
 
-apk for 25.12 (ipk for 24.10 later); aarch64, arm, mipsel, x86_64 from one `GOARCH` matrix.
-`@measured go build -trimpath -ldflags "-s -w" 2026-11-01`: arm64 7.1 MiB, arm 7.6 MiB, amd64
-7.7 MiB, mipsle 8.5 MiB (over the 8 MB target). The apk is written by `apk mkpkg` from apk-tools 3
-in a pinned alpine image: OpenWrt's own apk has no `mkpkg` (measured on 25.12.5, apk-tools 3.0.5,
-2026-11-01), so the package cannot be built on the router. It is published through its own signed apk
-feed on GitHub Pages, signed on the Mac that holds the key, in its own Docker, from the packages CI built, next to
-hermes-openwrt's feed: [FEED.md](FEED.md). Every entry of the package is root's: the r1 packages
-named them nobody:nobody (`@measured scripts/vlab-feed.sh OLD_APK=<r1> 2026-11-01`: /usr/bin/llm-gateway
-and /etc/init.d/llm-gateway installed as 65534:65534 on OpenWrt 25.12.5), so the release is r2. hermes-openwrt gets an option to pair with it the way it pairs with
-openwrt-mcp: the package creates the `hermes` client and writes its key into `key_file`.
+apk for OpenWrt 25.12 on `aarch64_cortex-a53`, `arm_cortex-a7_neon-vfpv4`, `mipsel_24kc` and
+`x86_64`, from one `GOARCH` matrix in CI. `@measured go build -trimpath -ldflags "-s -w" 2026-11-01`:
+the binary is 7.1 MiB on arm64, 7.6 MiB on arm, 7.7 MiB on amd64 and 8.5 MiB on mipsle; each package
+is about 3 MB. The apk is written by `apk mkpkg` from apk-tools 3 in a pinned alpine image (OpenWrt's
+own apk 3.0.5 ships without `mkpkg`), and published through its own signed feed on GitHub Pages,
+signed on the Mac that holds the key, in its own Docker, from the packages CI built:
+[FEED.md](FEED.md). Every entry of the package is root's. The first build, r1, named them
+nobody:nobody (`@measured scripts/vlab-feed.sh OLD_APK=<r1> 2026-11-01`: `/usr/bin/llm-gateway` and
+`/etc/init.d/llm-gateway` installed as 65534:65534 on OpenWrt 25.12.5); it was never published,
+and the release is r2.
 
-## Later, not v1
-
-LuCI app (backends, clients with show-once keys, journal). `/v1/models/{id}` (Hermes asks for it
-at start, measured on a Flint 2 2026-11-01; it now gets 404 and carries on). Failover between local backends.
-A cloud backend, only per client and only when the owner turns it on. Our own phone model server.
-A LuCI helper that runs a model in the admin's browser (WebGPU or Chrome's Prompt API).
+hermes-openwrt r20 pairs with it the way it pairs with openwrt-mcp: with `hermes.main.llm_gateway`
+on, the package creates the `hermes` client and keeps its key in `/etc/hermes-agent/llm-gateway.key`
+(0600 root).
 
 ## TLS
 
 `@decided 2026-11-01`: HTTPS on the LAN by default, chosen over plain HTTP with a key, at the cost
 that each client device trusts the router's certificate once.
 
-The package generates an ECDSA P-256 key and a self-signed certificate on first start
-(`/etc/llm-gateway/tls.key` 0600 root, `tls.crt`), with the router's LAN addresses and
-`llm.<domain>` as names. `llm-gateway cert` prints the certificate and its SHA-256 fingerprint, and
-`client add` prints the fingerprint next to the key. TLS 1.2 is the floor. The loopback port stays
-plain HTTP: it never leaves the router, and the key is still required on it (invariant 1).
+On first start the package makes a house CA (ECDSA P-256, `/etc/llm-gateway/ca.key` 0600 root,
+`ca.crt`) whose name constraints, marked critical, permit only `llm.<domain>` and the private
+ranges, and under it the gateway's certificate (`tls.key` 0600 root, `tls.crt`) for `llm.<domain>`
+and the router's LAN addresses. The certificate lives 397 days and is renewed 30 days before its
+end, and reissued when the LAN address changes, always under the same CA, so a device trusts the
+CA once. `llm-gateway cert` prints the CA and its SHA-256 fingerprint, and `client add` prints the
+fingerprint next to the key. TLS 1.2 is the floor. The loopback port stays plain HTTP: it never
+leaves the router, and the key is required on it too (invariant 1).
