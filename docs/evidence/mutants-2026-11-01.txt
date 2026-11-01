@@ -1,0 +1,25 @@
+caught    empty-key-matches-first-client     by TestRequestWithoutKeyIsRefusedBeforeAnyBackend
+caught    any-key-matches                    by TestWrongKeyIsRefused
+caught    loopback-is-trusted                by TestLoopbackRequestStillNeedsAKey
+caught    host-not-checked                   by TestForeignHostIsRefused
+caught    origin-not-checked                 by TestUnlistedOriginIsRefused
+caught    preflight-allows-any-origin        by TestUnlistedOriginIsRefused
+caught    backend-cors-passes-through        by TestNoResponseCarriesAWildcardOrigin
+caught    model-not-checked                  by TestClientReachesOnlyItsModels
+caught    model-list-unfiltered              by TestModelListShowsOnlyTheClientsModels
+caught    star-not-honoured                  by TestModelListShowsOnlyTheClientsModels
+caught    dial-not-checked                   by TestBackendNameResolvingOutsideIsRefusedAtDial
+caught    load-not-checked                   by TestPublicBackendAddressIsRefusedAtLoad
+caught    public-counts-as-house             by TestPublicBackendAddressIsRefusedAtLoad, TestBackendNameResolvingOutsideIsRefusedAtDial
+caught    wildcard-zone-address-bound        by TestListensOnlyOnNamedZoneAddressesAndLoopback
+caught    public-zone-address-bound          by TestOpenWrtZonesReadTheFirewallAndNetifd
+caught    wan-zone-accepted                  by TestListensOnlyOnNamedZoneAddressesAndLoopback
+caught    journal-keeps-the-offered-key      by TestJournalRecordsARefusalWithoutTheKey
+caught    client-key-forwarded-upstream      by TestUpstreamKeyReplacesTheClientsKey
+caught    stream-buffered                    by TestStreamingPassesThroughAndIsRecorded
+caught    ca-not-name-constrained            by TestHouseCACannotVouchForOtherNames
+caught    concurrency-not-held               by TestClientConcurrencyIsHeld
+caught    rate-not-held                      by TestClientRateIsHeldPerMinute
+caught    key-stored-in-clear                by TestClientAddShowsTheKeyOnceAndStoresOnlyItsHash
+caught    lan-port-plain-http                by TestServeBindsOnlyTheZoneAddressesAndLoopback
+mutants: 24 of 24 caught

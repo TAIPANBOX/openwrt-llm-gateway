@@ -57,13 +57,15 @@ func TestListensOnlyOnNamedZoneAddressesAndLoopback(t *testing.T) {
 		}
 	}
 	// A wildcard that a broken network status reports is refused, not bound.
-	bad := fakeZones{zones: map[string][]string{"lan": {"lan"}}, addrs: map[string][]netip.Addr{"lan": {netip.MustParseAddr("0.0.0.0")}}}
-	if _, err := ListenAddrs([]string{"lan"}, bad, 8760, 8761); err == nil {
-		t.Fatal("a zone address of 0.0.0.0 was accepted")
-	}
-	bad.addrs["lan"] = []netip.Addr{netip.MustParseAddr("::")}
-	if _, err := ListenAddrs([]string{"lan"}, bad, 8760, 8761); err == nil {
-		t.Fatal("a zone address of :: was accepted")
+	// It stops the start outright, naming the cause, rather than falling back to loopback: a
+	// netifd that reports a wildcard is broken, and the owner should hear of it.
+	for _, w := range []string{"0.0.0.0", "::"} {
+		bad := fakeZones{zones: map[string][]string{"lan": {"lan"}}, addrs: map[string][]netip.Addr{
+			"lan": {netip.MustParseAddr("192.168.8.1"), netip.MustParseAddr(w)}}}
+		got, err := ListenAddrs([]string{"lan"}, bad, 8760, 8761)
+		if err == nil || got != nil || !strings.Contains(err.Error(), "wildcard") {
+			t.Fatalf("a zone address of %s: got %v, %v; want nothing to listen on and an error naming the wildcard", w, got, err)
+		}
 	}
 	// Naming the wan zone is refused outright: the gateway is for the house.
 	if _, err := ListenAddrs([]string{"lan", "wan"}, src, 8760, 8761); err == nil {
