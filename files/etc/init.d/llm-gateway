@@ -1,15 +1,39 @@
 #!/bin/sh /etc/rc.common
 # llm-gateway under procd.
 #
-# Two things this script does that the daemon does not do for itself, because they change other
-# packages' configuration: a firewall rule opening the port from each zone the gateway names
-# (lan accepts input already; a zone such as iot does not), and a dnsmasq name for the gateway.
-# Both live in sections named llm_gateway*, which the removal script deletes.
+# Three things this script does that the daemon does not do for itself. Two change other packages'
+# configuration: a firewall rule opening the port from each zone the gateway names (lan accepts
+# input already; a zone such as iot does not), and a dnsmasq name for the gateway. Both live in
+# sections named llm_gateway*, which the removal script deletes. The third is `llm-gateway prepare`,
+# the root work the daemon must not need: certificates, the snapshot of where it listens, the
+# backends' keys. Everything here runs on start_service, which procd's respawn does not repeat.
 
 USE_PROCD=1
 START=96
 STOP=10
 PROG=/usr/bin/llm-gateway
+EXTRA_COMMANDS="account"
+EXTRA_HELP="	account	Make the llm-gateway user and group if they are not there"
+
+# The group and user the snapshot's directory and the daemon's key belong to. OpenWrt's own helpers
+# write the entries the way every other package's are: the next free group id, the same id for the
+# user when that is free, a locked password and no login shell. The package's scripts run this too;
+# it is here as well because /etc/passwd can come back from a backup without it. Removal leaves it,
+# as hermes-agent's does: a later user handed the same id would own what this one left.
+llmgw_account() {
+	local gid uid
+	gid=$(group_add_next llm-gateway)
+	[ -n "$gid" ] || return 1
+	user_exists llm-gateway && return 0
+	uid=$gid
+	cut -d: -f3 /etc/passwd | grep -qx "$uid" && uid=""
+	user_add llm-gateway "$uid" "$gid" "llm-gateway" /var/empty /bin/false
+	user_exists llm-gateway
+}
+
+account() {
+	llmgw_account
+}
 
 sync_firewall() {
 	local port zones zone changed=0 have
@@ -56,13 +80,20 @@ sync_dns() {
 }
 
 start_service() {
-	local enabled
+	local enabled out rc
 	config_load llm-gateway
 	config_get_bool enabled main enabled 0
 	if [ "$enabled" != 1 ]; then
 		logger -t llm-gateway "disabled; set llm-gateway.main.enabled=1"
 		return 0
 	fi
+	llmgw_account || { logger -t llm-gateway "the llm-gateway account could not be made; not starting"; return 1; }
+	# Before the firewall and dnsmasq: a configuration prepare refuses opens no port. What it says
+	# goes to the system log, since nothing else reads its output; a refusal is one line.
+	out=$("$PROG" prepare 2>&1)
+	rc=$?
+	[ -z "$out" ] || echo "$out" | sed 's/^llm-gateway: //' | logger -t llm-gateway
+	[ "$rc" = 0 ] || return 1
 	sync_firewall
 	sync_dns
 	procd_open_instance

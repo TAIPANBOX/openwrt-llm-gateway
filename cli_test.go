@@ -40,10 +40,12 @@ func testEnv(t *testing.T, conf string) (*env, *fakeUCI) {
 	dhcp := filepath.Join(dir, "dhcp")
 	os.WriteFile(dhcp, []byte("config dnsmasq\n\toption domain 'lan'\n"), 0o644)
 	u := &fakeUCI{}
-	return &env{configPath: cfgPath, dhcpPath: dhcp, uci: u.run, resolver: staticResolver{},
+	return &env{configPath: cfgPath, dhcpPath: dhcp, runDir: filepath.Join(dir, "run"), uci: u.run, resolver: staticResolver{},
 		zones: fakeZones{zones: map[string][]string{"lan": {"lan"}},
 			addrs: map[string][]netip.Addr{"lan": {netip.MustParseAddr("192.168.8.1")}}},
-		now: time.Now, listen: net.Listen}, u
+		now: time.Now, listen: net.Listen,
+		account: func() (serviceAccount, error) { return serviceAccount{uid: testUID, gid: testGID}, nil },
+		chown:   newFakeOwners().chown}, u
 }
 
 var keyRE = regexp.MustCompile(`llmgw_[A-Za-z0-9_-]{43}`)
@@ -106,10 +108,13 @@ func TestClientAddRefusesWhatItCannotWriteSafely(t *testing.T) {
 func TestServeBindsOnlyTheZoneAddressesAndLoopback(t *testing.T) {
 	certDir := t.TempDir()
 	conf := "config gateway 'main'\n\toption enabled '1'\n\tlist zone 'lan'\n" +
-		"\toption cert_dir '" + certDir + "'\n\toption journal '" + filepath.Join(certDir, "j.log") + "'\n" +
+		"\toption cert_dir '" + certDir + "'\n" +
 		"config backend 'desktop'\n\toption url 'http://127.0.0.1:9/v1'\n\tlist model 'm1'\n" +
 		"config client 'laptop'\n\toption key_hash '" + HashKey(testKey) + "'\n\tlist model '*'\n"
 	e, _ := testEnv(t, conf)
+	if code := run([]string{"prepare"}, io.Discard, io.Discard, e); code != 0 {
+		t.Fatalf("prepare exited %d", code)
+	}
 	var mu sync.Mutex
 	asked := []string{}
 	real := map[string]string{}
@@ -125,7 +130,7 @@ func TestServeBindsOnlyTheZoneAddressesAndLoopback(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
-	go func() { done <- serve(ctx, e, io.Discard) }()
+	go func() { done <- serve(ctx, e.daemon(), io.Discard) }()
 	var clients []*http.Client
 	defer func() {
 		for _, c := range clients {

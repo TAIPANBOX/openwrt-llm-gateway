@@ -1,0 +1,18 @@
+#!/bin/sh
+# The gateway's certificate is renewed by `llm-gateway prepare`, which runs when the service starts,
+# and the daemon does not renew it itself: a router whose gateway runs for a year would see it end.
+# busybox ntpd calls this every 11 minutes with ACTION=periodic, and with a stratum below 16 once
+# the clock can be believed. Hotplug must not block, so the work runs in the background.
+[ -x /usr/bin/llm-gateway ] || exit 0
+[ "$ACTION" = periodic ] || exit 0
+case "$stratum" in
+'' | *[!0-9]*) exit 0 ;;
+esac
+[ "$stratum" -lt 16 ] 2>/dev/null || exit 0
+(
+	/etc/init.d/llm-gateway running || exit 0
+	/usr/bin/llm-gateway renew-due || exit 0
+	logger -t llm-gateway "the certificate is near its end; restarting to renew it"
+	/etc/init.d/llm-gateway restart
+) >/dev/null 2>&1 </dev/null &
+exit 0

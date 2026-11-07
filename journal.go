@@ -46,8 +46,8 @@ type discardJournal struct{}
 
 func (discardJournal) Record(Entry) {}
 
-// fileJournal appends to a file and keeps one previous file when it passes max bytes. Its
-// default home is /tmp, so the router's flash takes none of these writes.
+// fileJournal appends to a file and keeps one previous file when it passes max bytes. Its home is
+// under /var/run, in RAM, so the router's flash takes none of these writes.
 type fileJournal struct {
 	mu   sync.Mutex
 	path string

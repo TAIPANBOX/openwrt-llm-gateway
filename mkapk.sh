@@ -15,7 +15,8 @@ VERSION=${2:?usage: mkapk.sh <binary> <version> [arch]}
 ARCH=${3:-aarch64_cortex-a53}
 # r2: the r1 packages named every entry nobody:nobody (see run_mkpkg); the same version with other
 # owners would be a second package under one name.
-PKGREL=${PKGREL:-2}
+# r3: `llm-gateway prepare`, the account, the journal under /var/run, post-upgrade, the ntp hook.
+PKGREL=${PKGREL:-3}
 PKG=llm-gateway
 DESCRIPTION="The house model servers behind one name on the router: a key per client, HTTPS under a name-constrained house CA, zone rules and a journal without content."
 OUT="${PKG}-${VERSION}-r${PKGREL}.apk"
@@ -26,25 +27,44 @@ BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
 
 DATA="$BUILD/root"
-mkdir -p "$DATA/usr/bin" "$DATA/etc/init.d" "$DATA/etc/config" "$DATA/lib/upgrade/keep.d"
-install -m 0755 "$BIN"                                "$DATA/usr/bin/$PKG"
-install -m 0755 "$SRC/files/etc/init.d/$PKG"          "$DATA/etc/init.d/$PKG"
-install -m 0644 "$SRC/files/etc/config/$PKG"          "$DATA/etc/config/$PKG"
-install -m 0644 "$SRC/files/lib/upgrade/keep.d/$PKG"  "$DATA/lib/upgrade/keep.d/$PKG"
+mkdir -p "$DATA/usr/bin" "$DATA/etc/init.d" "$DATA/etc/config" "$DATA/etc/hotplug.d/ntp" "$DATA/lib/upgrade/keep.d"
+install -m 0755 "$BIN"                                     "$DATA/usr/bin/$PKG"
+install -m 0755 "$SRC/files/etc/init.d/$PKG"               "$DATA/etc/init.d/$PKG"
+install -m 0644 "$SRC/files/etc/config/$PKG"               "$DATA/etc/config/$PKG"
+install -m 0644 "$SRC/files/etc/hotplug.d/ntp/50-$PKG"     "$DATA/etc/hotplug.d/ntp/50-$PKG"
+install -m 0644 "$SRC/files/lib/upgrade/keep.d/$PKG"       "$DATA/lib/upgrade/keep.d/$PKG"
 
-# post-install covers a fresh install and an upgrade. The service stays off until the owner
-# enables it, so enabling the init script starts nothing yet.
+# post-install runs on a fresh install only. apk runs post-upgrade, never post-install, when it
+# replaces a version (apk-tools database.c), so what an upgrade needs has to be in post-upgrade as
+# well. The service stays off until the owner enables it, so enabling the init script starts
+# nothing yet.
 cat > "$BUILD/post-install" <<EOT
 #!/bin/sh
+/etc/init.d/$PKG account
 /etc/init.d/$PKG enable
 /etc/init.d/$PKG restart
 exit 0
 EOT
-# Removal takes back what the init script added to other packages' configuration.
+# post-upgrade never enables: an owner who switched the start at boot off keeps it off. It restarts
+# a gateway that runs or is meant to run, or the old binary would carry on from memory until the
+# next reboot, and the change would arrive then, possibly far from home. A journal of r2 or earlier
+# is left in /tmp; the restart is what stops anything writing to it.
+cat > "$BUILD/post-upgrade" <<EOT
+#!/bin/sh
+/etc/init.d/$PKG account
+if /etc/init.d/$PKG enabled || /etc/init.d/$PKG running; then
+	/etc/init.d/$PKG restart
+fi
+rm -rf /tmp/$PKG
+exit 0
+EOT
+# Removal takes back what the init script added to other packages' configuration, and the copy of
+# the backends' keys. The account stays: see llmgw_account in the init script.
 cat > "$BUILD/pre-deinstall" <<'EOT'
 #!/bin/sh
 /etc/init.d/llm-gateway stop
 /etc/init.d/llm-gateway disable
+rm -rf /var/run/llm-gateway
 for s in $(uci -q show firewall | sed -n 's/^firewall\.\(llm_gateway_[a-z0-9_]*\)=rule$/\1/p'); do
 	uci -q delete "firewall.$s"
 done
@@ -55,7 +75,7 @@ uci commit dhcp
 /etc/init.d/dnsmasq reload >/dev/null 2>&1
 exit 0
 EOT
-chmod 0755 "$BUILD/post-install" "$BUILD/pre-deinstall"
+chmod 0755 "$BUILD/post-install" "$BUILD/post-upgrade" "$BUILD/pre-deinstall"
 
 # MKAPK_STAGE=<dir> stages the tree and the scripts there with a run-mkpkg.sh that holds the one
 # command, and stops: the vlab run builds the package inside the OpenWrt router itself, whose apk
@@ -63,7 +83,7 @@ chmod 0755 "$BUILD/post-install" "$BUILD/pre-deinstall"
 if [ -n "${MKAPK_STAGE:-}" ]; then
 	mkdir -p "$MKAPK_STAGE"
 	cp -R "$DATA" "$MKAPK_STAGE/root"
-	cp "$BUILD/post-install" "$BUILD/pre-deinstall" "$MKAPK_STAGE/"
+	cp "$BUILD/post-install" "$BUILD/post-upgrade" "$BUILD/pre-deinstall" "$MKAPK_STAGE/"
 	# Run as root in the pinned image: the tree is copied and given to root first, for the reason
 	# run_mkpkg below gives, and the bind-mounted original is left to its owner.
 	{
@@ -74,7 +94,7 @@ if [ -n "${MKAPK_STAGE:-}" ]; then
 		echo "	--info 'license:MIT' --info 'origin:$PKG' --info 'url:https://github.com/TAIPANBOX/openwrt-llm-gateway' \\"
 		echo "	--info 'maintainer:TAIPANBOX' --info 'depends:libc ubus jsonfilter' \\"
 		echo "	--info 'description:$DESCRIPTION' \\"
-		echo "	--script post-install:post-install --script pre-deinstall:pre-deinstall \\"
+		echo "	--script post-install:post-install --script post-upgrade:post-upgrade --script pre-deinstall:pre-deinstall \\"
 		echo "	--files \"\$t/root\" --output $OUT && rm -rf \"\$t\" && echo $OUT"
 	} > "$MKAPK_STAGE/run-mkpkg.sh"
 	chmod 0755 "$MKAPK_STAGE/run-mkpkg.sh"
@@ -129,9 +149,11 @@ run_mkpkg \
 	--info "description:$DESCRIPTION" \
 	--info "depends:libc ubus jsonfilter" \
 	--script "post-install:$BUILD/post-install" \
+	--script "post-upgrade:$BUILD/post-upgrade" \
 	--script "pre-deinstall:$BUILD/pre-deinstall" \
 	--output "$BUILD/$OUT"
 check_owners "$BUILD/$OUT"
+sh "$SRC/scripts/gate-package-scripts.sh" "$BUILD/adbdump.txt"
 
 rm -f "$SRC/$OUT"
 cp "$BUILD/$OUT" "$SRC/$OUT"

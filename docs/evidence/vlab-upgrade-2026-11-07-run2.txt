@@ -1,0 +1,119 @@
+Where this ran: OpenWrt 25.12.5 x86-64, the image vlab uses, in a QEMU VM of its own on forge with user-mode
+  networking, from a fresh copy of the image: a lab of another session held vlab at the time.
+From: llm-gateway-0.1.0-r2.apk, x86_64, from the signed feed,
+  sha256 eeb5ce7e3e3ccd0cfe14a5985431f34b1dde95a47b12c9d58bd4ddc6097582df
+To:   llm-gateway-0.1.0-r3.apk, x86_64, built by CI run 42372446754 from 4829b10,
+  sha256 849597bd1eba8c3504158d28346c060113fe3fb16b65448a69f5a92fa603c1fc
+Run:  ROUTER=<ssh to the VM> HTTPS_AT=127.0.0.1:28760 OLD_APK=... NEW_APK=... scripts/vlab-upgrade.sh
+The device is curl on forge, with the CA saved before the upgrade, and the client's key.
+
+Second run, a fresh image and so a new CA, 14 checks: removal and a fresh install added.
+
+12:37:02 router: OpenWrt 25.12.5 r33051-f5dae5ece4
+12:37:02 router: the two packages into /root/upg
+12:37:05 --- before: the released package, as an owner has it
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/targets/x86/64/packages/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/base/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/targets/x86/64/kmods/6.12.94-1-a7bc15f451f9652701ba04af9cfb0b95/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/luci/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/packages/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/routing/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/telephony/packages.adb: No such file or directory
+WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/video/packages.adb: No such file or directory
+  * Command failed: ubus call service delete { "name": "llm-gateway" } (Not found)
+  Executing llm-gateway-0.1.0-r2.post-install
+OK: 27.0 MiB in 183 packages
+old: llm-gateway-0.1.0-r2 - The house model servers behind one name on the router: a key per client, HTTPS under a name-constrained house CA, zone rules and a journal without content.
+old: pid 3310, Uid: 0 0 0 0
+old: CA 20:53:81:6D:B7:A2:BA:5F:41:C7:C1:BE:74:A7:52:E7:7D:34:BE:D6:6B:3B:EC:44:29:31:DE:3F:7C:DB:B5:D6
+old: account in /etc/passwd: 0
+old: journal directory: drwx------ 0 0
+12:37:19   a device that trusted the old CA, with its key: 200, without: 401
+12:37:19 --- upgrade: apk replaces it
+apk: WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/targets/x86/64/packages/packages.adb: No such file or directory
+apk: WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/base/packages.adb: No such file or directory
+apk: WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/targets/x86/64/kmods/6.12.94-1-a7bc15f451f9652701ba04af9cfb0b95/packages.adb: No such file or directory
+apk: WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/luci/packages.adb: No such file or directory
+apk: WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/packages/packages.adb: No such file or directory
+apk: WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/routing/packages.adb: No such file or directory
+apk: WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/telephony/packages.adb: No such file or directory
+apk: WARNING: opening from cache https://downloads.openwrt.org/releases/25.12.5/packages/x86_64/video/packages.adb: No such file or directory
+apk: (1/1) Upgrading llm-gateway (0.1.0-r2 -> 0.1.0-r3)
+apk:   Installing file to etc/config/llm-gateway.apk-new
+apk:   Executing llm-gateway-0.1.0-r3.post-upgrade
+apk: OK: 27.1 MiB in 183 packages
+new: llm-gateway-0.1.0-r3 - The house model servers behind one name on the router: a key per client, HTTPS under a name-constrained house CA, zone rules and a journal without content.
+new: pid 3509, was 3310, Uid: 0 0 0 0
+new: exe /usr/bin/llm-gateway
+new: CA 20:53:81:6D:B7:A2:BA:5F:41:C7:C1:BE:74:A7:52:E7:7D:34:BE:D6:6B:3B:EC:44:29:31:DE:3F:7C:DB:B5:D6
+new: account llm-gateway:x:32768:32768:llm-gateway:/var/empty:/bin/false
+new: group llm-gateway:x:32768:
+new: /var/run/llm-gateway: drwxr-x--- 0 32768
+new: /var/run/llm-gateway/snapshot.json: -rw-r----- 0 32768
+new: /var/run/llm-gateway/backend.keys: -rw-r----- 0 32768
+new: /var/run/llm-gateway/journal: drwx------ 32768 32768
+new: /etc/llm-gateway: drwx------ 0 0
+new: /etc/llm-gateway/ca.key: -rw------- 0 0
+new: /etc/llm-gateway/tls.key: -rw-r----- 0 32768
+new: snapshot {"version":1,"config_sha256":"123cc6ca1e3db0f59df6bb75124bfa1d399bb0da14bee8e8b4061119e0568179","name":"llm.home.arpa","listen":["192.168.1.1:8760","[fd85:8324:2ea4::1]:8760","127.0.0.1:8761"],"hosts":["llm.home.arpa","localhost","192.168.1.1","fd85:8324:2ea4::1","127.0.0.1"]}
+Sat Nov  7 12:37:05 2026 user.notice llm-gateway: disabled; set llm-gateway.main.enabled=1
+log: err llm-gateway[3310]: llm-gateway: listening on 192.168.1.1:8760
+log: err llm-gateway[3310]: llm-gateway: listening on [fd85:8324:2ea4::1]:8760
+log: err llm-gateway[3310]: llm-gateway: listening on 127.0.0.1:8761
+log: err llm-gateway[3509]: llm-gateway: listening on 192.168.1.1:8760
+log: err llm-gateway[3509]: llm-gateway: listening on [fd85:8324:2ea4::1]:8760
+log: err llm-gateway[3509]: llm-gateway: listening on 127.0.0.1:8761
+PASS upgrade_ran_post_upgrade
+PASS upgrade_made_the_account
+PASS upgrade_restarted_the_daemon
+PASS upgrade_kept_the_ca
+PASS upgrade_kept_the_configuration
+PASS prepare_left_the_snapshot
+as the account: read the snapshot: yes; read ca.key: no; wrote in the journal's directory: yes
+PASS snapshot_directory_is_roots
+12:37:26   the same device, the same key: 200, without it: 401
+PASS gateway_answers_after_the_upgrade
+journal: -rw------- 0 0, 2 lines
+PASS journal_moved_to_var_run
+12:37:27 --- lowport
+Sat Nov  7 12:37:27 2026 user.notice llm-gateway: gateway: port 443 is below 1024, which the gateway does not bind; not starting
+lines: 1; daemon: ; firewall rule: 8760
+PASS low_port_is_one_line
+12:37:40 --- reboot
+after boot: pid 2686, CA 20:53:81:6D:B7:A2:BA:5F:41:C7:C1:BE:74:A7:52:E7:7D:34:BE:D6:6B:3B:EC:44:29:31:DE:3F:7C:DB:B5:D6
+after boot: drwxr-x--- 0 32768 -rw-r----- 0 32768
+PASS reboot_brings_it_back
+12:39:16   after the reboot, the same device, the same key: 200
+12:39:16 --- ntp: the certificate nears its end on a gateway nobody restarted
+certificate until 2027-12-09; a day past the start of the renewal window is 1828310400
+clock moved to Wed Nov 10 00:00:00 UTC 2027
+new end: 2028-12-11; CA 20:53:81:6D:B7:A2:BA:5F:41:C7:C1:BE:74:A7:52:E7:7D:34:BE:D6:6B:3B:EC:44:29:31:DE:3F:7C:DB:B5:D6
+Wed Nov 10 00:00:00 2027 user.notice llm-gateway: the certificate is near its end; restarting to renew it
+PASS ntp_hook_renews_the_certificate
+12:39:29   after the renewal, the same device, the same key: 200
+12:39:29 --- removal, then a fresh install
+  Executing llm-gateway-0.1.0-r3.pre-deinstall
+OK: 19.3 MiB in 182 packages
+removed: /var/run/llm-gateway gone; account 1; rules 0
+PASS removal_takes_the_keys_copy_and_keeps_the_account
+  Executing llm-gateway-0.1.0-r3.post-install
+  * Command failed: ubus call service delete { "name": "llm-gateway" } (Not found)
+OK: 27.1 MiB in 183 packages
+installed: account llm-gateway:x:32768:32768:llm-gateway:/var/empty:/bin/false; pid 3831; drwxr-x--- 0 32768; enabled at boot: yes
+PASS fresh_install_makes_the_account
+12:39:54   after the fresh install, the same device, the same key: 200
+12:39:54 PASS upgrade_ran_post_upgrade
+12:39:54 PASS upgrade_made_the_account
+12:39:54 PASS upgrade_restarted_the_daemon
+12:39:54 PASS upgrade_kept_the_ca
+12:39:54 PASS upgrade_kept_the_configuration
+12:39:54 PASS prepare_left_the_snapshot
+12:39:54 PASS snapshot_directory_is_roots
+12:39:54 PASS gateway_answers_after_the_upgrade
+12:39:54 PASS journal_moved_to_var_run
+12:39:54 PASS low_port_is_one_line
+12:39:54 PASS reboot_brings_it_back
+12:39:54 PASS ntp_hook_renews_the_certificate
+12:39:54 PASS removal_takes_the_keys_copy_and_keeps_the_account
+12:39:54 PASS fresh_install_makes_the_account
+12:39:54 checks: 14 passed, 0 failed

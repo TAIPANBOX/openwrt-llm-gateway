@@ -1,0 +1,85 @@
+Red first for prepare, 2026-11-07. Run on forge, go1.27.3 linux/amd64:
+  go test -count=1 -timeout 300s -v .
+
+Tree: 96620b5 with the new and changed tests copied in, and a stub that changes no behaviour and
+only lets them compile: the env fields runDir, account and chown, type serviceAccount, type
+daemonEnv env, func (e *env) daemon() *env { return e }, and serverTLSConfig taking the certificate.
+There is no prepare command on that tree, so most of these stop at it: `prepare exited 2`. What each
+guard does on its own is shown by its mutant, in mutants-2026-11-07.txt.
+
+FAIL  TestPrepareWritesTheSnapshotAndTheKeys
+      prepare_test.go:228: prepare exited 2: usage:
+FAIL  TestPrepareOwnsTheSnapshotDirectory
+      prepare_test.go:263: prepare exited 2: usage:
+FAIL  TestPrepareGivesOnlyTheLeafKeyToTheGroup
+      prepare_test.go:302: prepare exited 2: usage:
+FAIL  TestPrepareTwiceChangesNothing
+      prepare_test.go:325: prepare exited 2: usage:
+FAIL  TestPrepareKeepsTheCA
+      prepare_test.go:349: prepare exited 2: usage:
+FAIL  TestPrepareRefusesADamagedCA
+      prepare_test.go:432: prepare exited 2: usage:
+FAIL  TestPrepareSaysWhenItMakesACA
+      prepare_test.go:452: prepare exited 2: usage:
+FAIL  TestPrepareRefusesWithoutTheAccount
+      prepare_test.go:475: prepare exited 2, want 1: usage:
+FAIL  TestPrepareRefusesWhatServeWouldNotBind
+      prepare_test.go:486: prepare exited 2, want 1: usage:
+FAIL  TestPrepareWithNoAddressYetLeavesLoopbackAndSaysSo
+      prepare_test.go:500: prepare exited 2: usage:
+FAIL  TestPrepareDoesNotWaitForDNS
+      prepare_test.go:513: prepare exited 2: usage:
+FAIL  TestPrepareWaitsForAnotherPrepare
+      prepare_test.go:521: prepare exited 2: usage:
+FAIL  TestDaemonLeavesTheCAAlone
+      prepare_test.go:558: prepare exited 2: usage:
+FAIL  TestDaemonDoesNotRepairCertificates
+      prepare_test.go:578: prepare exited 2: usage:
+FAIL  TestDaemonAsksTheRouterNothing
+      prepare_test.go:600: prepare exited 2: usage:
+FAIL  TestServeRefusesAMissingSnapshot
+      prepare_test.go:632: prepare exited 2: usage:
+FAIL  TestServeRefusesADamagedSnapshot
+      prepare_test.go:643: prepare exited 2: usage:
+FAIL  TestServeRefusesAStaleSnapshot
+      prepare_test.go:679: prepare exited 2: usage:
+FAIL  TestServeRefusesASnapshotThatListensOutside
+      prepare_test.go:696: prepare exited 2: usage:
+FAIL  TestServeRefusesASnapshotOthersCanChange
+      prepare_test.go:737: prepare exited 2: usage:
+FAIL  TestBackendKeyReachesTheDaemonThroughPrepare
+      prepare_test.go:778: prepare exited 2: usage:
+FAIL  TestBackendKeysFileIsReadWithCare
+      prepare_test.go:826: prepare exited 2: usage:
+FAIL  TestLANAddressChangeReachesTheDaemonThroughPrepare
+      prepare_test.go:866: prepare exited 2: usage:
+FAIL  TestPortBelow1024IsRefused
+      prepare_test.go:907: prepare exited 2, want 1: usage:
+FAIL  TestJournalLivesUnderVarRun
+      prepare_test.go:938: the journal is at /tmp/llm-gateway/journal.log
+FAIL  TestRenewDueSaysWhenTheCertificateNearsItsEnd
+      prepare_test.go:976: no certificate yet: exited 2, want 0
+FAIL  TestServeSaysWhenTheCertificateHasEnded
+      prepare_test.go:1020: prepare exited 2: usage:
+FAIL  TestPrepareStopsWhenAFileCannotGetItsOwner
+      prepare_test.go:1048: prepare exited 2, want 1: usage:
+FAIL  TestAConfigurationThatCannotBeReadStopsBothSteps
+      prepare_test.go:1070: prepare exited 2: usage:
+FAIL  TestPrepareOnADisabledGatewayMakesNoCertificates
+      prepare_test.go:1098: prepare exited 2: usage:
+FAIL  TestServeNeverExecs
+      gates_test.go:136: the daemon reaches LoadConfig, which reads the backends' key files: in serve (serve)
+FAIL  TestInitPreparesBeforeAnythingElse
+      gates_test.go:217: group is out of order in ["firewall" "dns" "open" "param command /var/tmp/wave-llm-gateway-cache/tmp/TestInitPreparesBefo
+FAIL  TestInitRefusalIsOneLineAndStartsNothing
+      gates_test.go:239: start_service returned "close", want rc=1: ["firewall" "dns" "open" "param command /var/tmp/wave-llm-gateway-cache/tmp/Te
+FAIL  TestInitWithoutTheAccountStartsNothing
+      gates_test.go:265: it went on without the account: ["firewall" "dns" "open" "param command /var/tmp/wave-llm-gateway-cache/tmp/TestInitWitho
+FAIL  TestPackageRunsPostUpgrade
+      gates_test.go:304: the direct mkpkg names post-upgrade 0 times, want 1
+FAIL  TestNtpHookRenewsOnlyWhenTheClockCanBeBelieved
+      gates_test.go:379: measured nothing: stat files/etc/hotplug.d/ntp/50-llm-gateway: no such file or directory
+FAIL  TestServeBindsOnlyTheZoneAddressesAndLoopback
+      cli_test.go:116: prepare exited 2
+
+37 of 37 red (36 new, 1 changed). The other 38 tests of the tree: all green

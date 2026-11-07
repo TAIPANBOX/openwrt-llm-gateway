@@ -127,5 +127,112 @@ fresh; sed -i.bak 's/turned on by the push; reading it again"$/turned on by the 
 grep -q 'turned on by the push"; return 0' "$TMP/r/scripts/feed-common.sh" || { echo "BAD  the no-read-back plant did not apply"; exit 1; }
 expect "red:--- FAIL: $P/never_serves_gh-pages" "pages: a 409 taken as on without reading it back" sh -c "$(KT $P)"
 
+# The daemon's reach: the walk from serve (invariants 14 and 15). DAEMON_SRC points it at a planted
+# tree while the test itself compiles from the clean one, so a plant needs no imports.
+D=TestServeNeverExecs
+DG() { echo "cd $REPO && DAEMON_SRC=$TMP/r go test -count=1 -run '^$D\$' ."; }
+fresh; expect green "daemon: as written" sh -c "$(DG)"
+fresh; perl -i -pe 's/^(func loadLeaf\(dir string\) \(tls.Certificate, error\) \{)$/$1\n\texec.Command("ubus", "call")/' "$TMP/r/tls.go"
+grep -q 'exec.Command("ubus", "call")' "$TMP/r/tls.go" || { echo "BAD  the exec plant did not apply"; exit 1; }
+expect "red:the daemon can start a program" "daemon: a program started on its path" sh -c "$(DG)"
+fresh; perl -i -pe 's/^(func \(g \*Gateway\) ServeHTTP\(.*\{)$/$1\n\texec.Command("uci", "show")/' "$TMP/r/gateway.go"
+grep -q 'exec.Command("uci", "show")' "$TMP/r/gateway.go" || { echo "BAD  the handler plant did not apply"; exit 1; }
+expect "red:the daemon can start a program" "daemon: a program started from a handler http.Server calls" sh -c "$(DG)"
+fresh; perl -i -pe 's/^(\tleaf, err := loadLeaf\(cfg.CertDir\))$/\tensureCerts(cfg.CertDir, nil, nil, e.now())\n$1/' "$TMP/r/main.go"
+grep -q 'ensureCerts(cfg.CertDir, nil' "$TMP/r/main.go" || { echo "BAD  the ensureCerts plant did not apply"; exit 1; }
+expect "red:the daemon reaches ensureCerts" "daemon: reaches the CA's maker" sh -c "$(DG)"
+fresh; perl -i -pe 's/^(func loadLeaf\(dir string\) \(tls.Certificate, error\) \{)$/$1\n\tos.ReadFile("\/etc\/config\/dhcp")/' "$TMP/r/tls.go"
+expect "red:the daemon names /etc/config/dhcp" "daemon: reads dnsmasq's configuration by path" sh -c "$(DG)"
+fresh; perl -i -pe 's/^(type daemonEnv struct \{)$/$1\n\tuci func()/' "$TMP/r/main.go"
+expect "red:daemonEnv has the field uci" "daemon: its env gains uci" sh -c "$(DG)"
+fresh; perl -i -pe 's/^(func clientList\(stdout, stderr io.Writer, e \*env\) int \{)$/$1\n\texec.Command("uci", "show")\n\tensureCerts("", nil, nil, e.now())/' "$TMP/r/main.go"
+grep -q 'ensureCerts("", nil' "$TMP/r/main.go" || { echo "BAD  the CLI plant did not apply"; exit 1; }
+expect green "daemon: a CLI command may do both" sh -c "$(DG)"
+fresh; rm -f "$TMP/r"/*.go
+expect nothing "daemon: no source" sh -c "$(DG)"
+fresh; perl -i -pe 's/^func \(g \*Gateway\) ServeHTTP\(/func (g *Gateway) Handle(/' "$TMP/r/gateway.go"
+expect nothing "daemon: the walk misses the handler" sh -c "$(DG)"
+
+# The init script, run for real against stand-ins
+I=files/etc/init.d/llm-gateway
+fresh; expect green "init: as written" sh -c "$(KT TestInitPreparesBeforeAnythingElse)"
+fresh; perl -i -ne 'print unless /^\tout=\$\("\$PROG" prepare 2>&1\)$/' "$TMP/r/$I"
+grep -q '"$PROG" prepare' "$TMP/r/$I" && { echo "BAD  the no-prepare plant did not apply"; exit 1; }
+expect "red:start_service did not run prepare" "init: prepare is not run" sh -c "$(KT TestInitPreparesBeforeAnythingElse)"
+fresh; perl -i -0pe 's/(\tllmgw_account \|\| \{)/\tsync_firewall\n$1/' "$TMP/r/$I"
+expect "red:out of order" "init: the firewall comes first" sh -c "$(KT TestInitPreparesBeforeAnythingElse)"
+fresh; perl -i -pe 's/^(\tprocd_set_param stderr 1)$/$1\n\tprocd_set_param user llm-gateway/' "$TMP/r/$I"
+expect "red:the daemon is given a user already" "init: the daemon is given a user in this step" sh -c "$(KT TestInitPreparesBeforeAnythingElse)"
+fresh; perl -i -ne 'print unless /^\t\[ "\$rc" = 0 \] \|\| return 1$/' "$TMP/r/$I"
+expect "red:--- FAIL: TestInitRefusalIsOneLineAndStartsNothing" "init: a refusal still starts" sh -c "$(KT TestInitRefusalIsOneLineAndStartsNothing)"
+fresh; perl -i -pe 's/^(\t\[ "\$rc" = 0 \] \|\| return 1)$/\t[ "\$rc" = 0 ] || logger -t llm-gateway "prepare failed"\n$1/' "$TMP/r/$I"
+expect "red:a refusal took 2 log lines" "init: a refusal takes two lines" sh -c "$(KT TestInitRefusalIsOneLineAndStartsNothing)"
+fresh; perl -i -ne 'print unless /^\tllmgw_account \|\| \{/' "$TMP/r/$I"
+expect "red:--- FAIL: TestInitWithoutTheAccountStartsNothing" "init: goes on without the account" sh -c "$(KT TestInitWithoutTheAccountStartsNothing)"
+fresh; rm "$TMP/r/$I"; expect nothing "init: no script" sh -c "$(KT TestInitPreparesBeforeAnythingElse)"
+
+# The package's scripts, from mkapk.sh as far as it runs without apk
+U=TestPackageRunsPostUpgrade
+fresh; expect green "package: as written" sh -c "$(KT $U)"
+fresh; perl -i -ne 'print unless /^\t--script "post-upgrade:\$BUILD\/post-upgrade" \\$/' "$TMP/r/mkapk.sh"
+expect "red:the direct mkpkg names post-upgrade 0 times" "package: CI's mkpkg drops post-upgrade" sh -c "$(KT $U)"
+fresh; sed -i.bak 's/ --script post-upgrade:post-upgrade//' "$TMP/r/mkapk.sh"
+expect "red:the staged mkpkg does not pack post-upgrade" "package: the staged mkpkg drops post-upgrade" sh -c "$(KT $U)"
+fresh; perl -i -pe 's/^# post-install runs on a fresh install only\..*$/# post-install covers a fresh install and an upgrade./' "$TMP/r/mkapk.sh"
+expect "red:the comment that says post-install covers an upgrade is back" "package: the wrong comment is back" sh -c "$(KT $U)"
+fresh; perl -i -0pe 's/(if \/etc\/init\.d\/\$PKG enabled)/\/etc\/init.d\/\$PKG enable\n$1/' "$TMP/r/mkapk.sh"
+expect "red:post-upgrade enables the service" "package: post-upgrade enables" sh -c "$(KT $U)"
+fresh; perl -i -0pe 's/(<<EOT\n#!\/bin\/sh\n)\/etc\/init\.d\/\$PKG account\n(if )/$1$2/' "$TMP/r/mkapk.sh"
+expect "red:want account and restart" "package: post-upgrade makes no account" sh -c "$(KT $U)"
+fresh; perl -i -0pe 's/if \/etc\/init\.d\/\$PKG enabled \|\| \/etc\/init\.d\/\$PKG running; then\n\t\/etc\/init\.d\/\$PKG restart\nfi\n//' "$TMP/r/mkapk.sh"
+expect "red:want account and restart" "package: post-upgrade does not restart" sh -c "$(KT $U)"
+fresh; perl -i -ne 'print unless /^rm -rf \/tmp\/\$PKG$/' "$TMP/r/mkapk.sh"
+expect "red:post-upgrade left the old journal in /tmp" "package: the old journal stays" sh -c "$(KT $U)"
+fresh; sed -i.bak '/^# r3:/s/$/ More words./' "$TMP/r/mkapk.sh"
+expect green "package: a comment may change" sh -c "$(KT $U)"
+fresh; rm "$TMP/r/mkapk.sh"; expect nothing "package: no mkapk.sh" sh -c "$(KT $U)"
+
+# The built package's scripts, read from `apk adbdump`, in the shape OpenWrt 25.12's apk 3.0.5 prints
+PS="sh $REPO/scripts/gate-package-scripts.sh"
+dump() { # post-upgrade's text
+	cat > "$TMP/dump.txt" <<EOD
+#%SCHEMA: 676B6370
+# ADB block, size: 1452, compat: 0, ver: 0
+info:
+  name: llm-gateway
+  version: 0.1.0-r3
+scripts:
+  post-install: |
+    #!/bin/sh
+    /etc/init.d/llm-gateway account
+    /etc/init.d/llm-gateway enable
+    /etc/init.d/llm-gateway restart
+    exit 0
+  pre-deinstall: |
+    #!/bin/sh
+    /etc/init.d/llm-gateway stop
+    exit 0
+$1
+# sig v00 h04 7702ecfc36eb9767: UNTRUSTED signature
+# data block, size: 1106
+EOD
+}
+UP='  post-upgrade: |
+    #!/bin/sh
+    /etc/init.d/llm-gateway account
+    if /etc/init.d/llm-gateway enabled || /etc/init.d/llm-gateway running; then
+    	/etc/init.d/llm-gateway restart
+    fi
+    rm -rf /tmp/llm-gateway
+    exit 0'
+dump "$UP"; expect green "package scripts: as built" $PS "$TMP/dump.txt"
+dump ""; expect "red:the package has no post-upgrade script" "package scripts: post-upgrade dropped" $PS "$TMP/dump.txt"
+dump "$(echo "$UP" | grep -v 'llm-gateway account')"; expect "red:post-upgrade does not run: /etc/init.d/llm-gateway account" "package scripts: no account" $PS "$TMP/dump.txt"
+dump "$(echo "$UP" | grep -v 'restart')"; expect "red:post-upgrade does not run: /etc/init.d/llm-gateway restart" "package scripts: no restart" $PS "$TMP/dump.txt"
+dump "$(echo "$UP" | sed 's/^    exit 0$/    \/etc\/init.d\/llm-gateway enable/')"; expect "red:post-upgrade enables the service" "package scripts: enables on upgrade" $PS "$TMP/dump.txt"
+: > "$TMP/dump.txt"; expect nothing "package scripts: an empty dump" $PS "$TMP/dump.txt"
+rm "$TMP/dump.txt"; expect nothing "package scripts: no dump" $PS "$TMP/dump.txt"
+echo "package: {}" > "$TMP/dump.txt"; expect nothing "package scripts: a dump with no scripts" $PS "$TMP/dump.txt"
+
 echo "teeth: $pass ok, $bad bad"
 [ $bad = 0 ]

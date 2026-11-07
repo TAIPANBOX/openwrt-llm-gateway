@@ -9,11 +9,22 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	// runDir holds what prepare leaves for the daemon. It is in RAM, and not /tmp, where anyone can
+	// put a directory of that name first.
+	runDir     = "/var/run/llm-gateway"
+	journalDir = runDir + "/" + journalSubdir
+	// minPort is the first port a daemon without root can bind. Below it the start would fail with
+	// EACCES, and procd would retry until it gave up.
+	minPort = 1024
 )
 
 // Backend is a model server in the house that speaks the OpenAI protocol under URL (".../v1").
@@ -102,9 +113,10 @@ func LoadConfig(path string, res Resolver) (*Config, error) {
 
 // ParseConfig reads and validates a configuration. Every backend's host must be, or resolve
 // only to, an address in the house (invariant 7); the dialer checks again on each connection.
+// A nil resolver leaves that to whoever loads it next: prepare must not depend on DNS being up.
 func ParseConfig(r io.Reader, res Resolver) (*Config, error) {
 	cfg := &Config{Port: 8760, LoopbackPort: 8761, Name: "llm",
-		JournalPath: "/tmp/llm-gateway/journal.log", CertDir: "/etc/llm-gateway"}
+		JournalPath: journalDir + "/journal.log", CertDir: "/etc/llm-gateway"}
 	seenModel := map[string]string{}
 	seenName := map[string]bool{}
 	seenHash := map[string]string{}
@@ -119,6 +131,9 @@ func ParseConfig(r io.Reader, res Resolver) (*Config, error) {
 					if err != nil || n < 1 || n > 65535 {
 						return nil, fmt.Errorf("gateway: %s %q is not a port", opt, v)
 					}
+					if n < minPort {
+						return nil, fmt.Errorf("gateway: %s %d is below %d, which the gateway does not bind", opt, n, minPort)
+					}
 					*dst = n
 				}
 			}
@@ -126,6 +141,9 @@ func ParseConfig(r io.Reader, res Resolver) (*Config, error) {
 				cfg.Name = v
 			}
 			if v, ok := s.Options["journal"]; ok {
+				if filepath.Dir(v) != journalDir || filepath.Clean(v) != v {
+					return nil, fmt.Errorf("gateway: journal %q is not a file directly under %s", v, journalDir)
+				}
 				cfg.JournalPath = v
 			}
 			if v, ok := s.Options["cert_dir"]; ok {
@@ -195,10 +213,12 @@ func parseBackend(s uciSection, res Resolver) (*Backend, error) {
 			return nil, fmt.Errorf("backend %s: model %q is not a model name", s.Name, m)
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := checkInHouse(ctx, res, u.Hostname()); err != nil {
-		return nil, fmt.Errorf("backend %s: %w", s.Name, err)
+	if res != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := checkInHouse(ctx, res, u.Hostname()); err != nil {
+			return nil, fmt.Errorf("backend %s: %w", s.Name, err)
+		}
 	}
 	return b, nil
 }

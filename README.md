@@ -69,6 +69,29 @@ trusted ([below](#trust-the-routers-ca)). Agents on the router itself use
 `http://127.0.0.1:8761/v1`, with a key as well. A device that is lost or given away loses its
 access with `llm-gateway client remove <name>` and `service llm-gateway reload`.
 
+Ports are 1024 and up: a lower one is refused with one line in the system log, and nothing starts.
+After changing the configuration, `service llm-gateway reload`: the daemon works from what the
+service found out when it started, and refuses that once the configuration has moved on.
+
+## How it starts
+
+Starting the service runs two things. `llm-gateway prepare`, as root, reads the firewall, netifd and
+dnsmasq, looks after the certificates, and leaves a snapshot of where to listen and a copy of the
+backends' keys in `/var/run/llm-gateway`. `llm-gateway serve` then works from that alone: it starts
+no program and asks the router nothing, and it has no way to make or change the CA. The daemon still
+runs as root for now; this split is what lets it stop.
+
+If `prepare` refuses, the reason is one line in `logread`, and nothing changed. In particular, a
+domain it cannot read or a CA it cannot use stops it, because a new CA would mean every device
+trusting the router again. To really start over, remove `/etc/llm-gateway/ca.crt` and `ca.key`.
+
+`llm-gateway check` shows how long the certificate has left. It renews by itself: once the clock is
+synchronised, a hook of busybox ntpd restarts the service within 30 days of the end, under the same
+CA. The journal is `/var/run/llm-gateway/journal/journal.log`.
+
+Upgrades are `apk upgrade`: the service restarts by itself, and if it was off at boot it stays off.
+Devices stay trusted, and clients keep their keys.
+
 ## One request, check by check
 
 ![One request through llm-gateway in the order of gateway.go: the Host (421 if foreign), the key (401), the web page's Origin (403), the model (403), the client's limits (429), and only then the model server, whose answer is streamed back (200)](docs/request.svg)
@@ -82,7 +105,8 @@ with the request, and the server's own key, where it has one, does.
 
 The gateway's certificate is issued by a CA the router makes for itself on first start. A device
 trusts that CA once; the gateway's own certificate under it is renewed without the device
-noticing. The CA is name-constrained, and the constraint is critical: it can vouch for `llm.lan`
+noticing. Changing the LAN domain or `llm-gateway.main.name` does need a new CA, because the name is
+in it: the system log then gives the old and the new fingerprint. The CA is name-constrained, and the constraint is critical: it can vouch for `llm.lan`
 (the name the gateway serves, `llm.` and your LAN domain) and for addresses in `10.0.0.0/8`,
 `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8` and `fc00::/7`, and for no other name. So a
 device that trusts it cannot be shown a forged certificate for a public site with it, even by
@@ -192,7 +216,9 @@ Every behaviour above is a scenario in [`features/`](features), bound to the tes
 a gate checks the binding both ways. The security properties are listed with their tests, gates
 and mutants in [`CLAUDE.md`](CLAUDE.md). The firewall behaviour is run on a real OpenWrt 25.12
 router in a virtual lab: [`scripts/vlab-e2e.sh`](scripts/vlab-e2e.sh), results in
-[`docs/evidence/`](docs/evidence). The feed is installed from in the same lab with OpenWrt's own
+[`docs/evidence/`](docs/evidence). So is an upgrade from the released package, with a device's trust
+and key checked from outside before and after: [`scripts/vlab-upgrade.sh`](scripts/vlab-upgrade.sh).
+The feed is installed from in the same lab with OpenWrt's own
 apk, with the key, without it, with another key and with a damaged package
 ([docs/FEED.md](docs/FEED.md)). Design: [`docs/DESIGN.md`](docs/DESIGN.md).
 
