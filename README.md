@@ -25,7 +25,7 @@ llm-gateway puts them behind the router:
 
 One static Go binary, about 7 to 9 MB, no database.
 
-**Current release**, in the signed feed since 2026-11-01: `llm-gateway` 0.1.0-r2 for OpenWrt 25.12,
+**Current release**, in the signed feed since 2026-11-07: `llm-gateway` 0.1.0-r4 for OpenWrt 25.12,
 on `aarch64_cortex-a53` (GL.iNet Flint 2 and other Filogic routers), `arm_cortex-a7_neon-vfpv4`,
 `mipsel_24kc` and `x86_64`. Feed: <https://taipanbox.github.io/openwrt-llm-gateway/>.
 

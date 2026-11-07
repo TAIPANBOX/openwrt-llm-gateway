@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased: 0.1.0-r4
+## 0.1.0-r4, released 2026-11-07
 
 The daemon loses root.
 
