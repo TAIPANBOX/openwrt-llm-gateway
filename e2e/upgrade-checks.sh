@@ -11,6 +11,7 @@
 #   reload    a new client and a reload
 #   respawn   the daemon killed
 #   root      serve as root, by hand, and from a procd that was told of a user that is not there
+#   controls  the same daemon without the capabilities file, and without ujail
 #   refused   no call of the daemon's was ever refused
 #   lowport   port 443 in the configuration
 #   afterboot what a reboot brings back
@@ -147,7 +148,7 @@ part_jail() {
 		[ -z "$(cd "$root" && find etc var tmp usr -name 'ca.key' 2>/dev/null)" ] && r=0
 	res ca_key_is_not_in_the_jail $r
 
-	awk '{print "mount: " $2, substr($4, 1, 2)}' /proc/$pid/mounts | sort -u
+	awk '{print "mount: " $2, $3, $4}' /proc/$pid/mounts | sort -u
 	r=1
 	[ "$(awk '$4 ~ /^rw/ && $2 !~ /^\/(proc|dev)(\/|$)/ {print $2}' /proc/$pid/mounts)" = "$J/journal" ] && r=0
 	res only_the_journal_is_writable $r
@@ -168,7 +169,7 @@ part_prefill() {
 }
 
 part_rotated() {
-	echo "journal: $(ls -ln $J/journal | awk 'NR>1 {print $1, $3, $5, $9}' | tr '\n' ';')"
+	echo "journal: $(ls -ln $J/journal | awk 'NF > 8 {print $1, $3, $5, $9}' | tr '\n' ';')"
 	r=1; [ -s $J/journal/journal.log.1 ] && [ "$(wc -c < $J/journal/journal.log)" -lt 100000 ] && grep -q '"client":"laptop"' $J/journal/journal.log && confined "$(daemon_pid)" && r=0
 	res stream_and_journal_work_in_the_jail $r
 }
@@ -217,6 +218,42 @@ part_root() {
 	r=1; refused && ! listening 8761 && ! listening 8760 && r=0
 	cp "$U/init.saved" $INIT
 	res root_is_refused_when_procd_keeps_it $r
+	$INIT restart
+	wait_for 60 listening 8761
+}
+
+# A zero means something only beside what it is without the thing that makes it zero, so these take
+# each away in turn and read the kernel again.
+part_controls() {
+	cp $INIT "$U/init.saved"
+	cp /etc/capabilities/llm-gateway.json "$U/caps.saved"
+	bnd() { sed -n 's/^CapBnd:[[:space:]]*//p' "/proc/$(daemon_pid)/status"; }
+	restart_up() { $INIT restart; sleep 1; wait_for 40 listening 8761; }
+	asked=$(bnd)
+	sed -i '/procd_set_param capabilities/d' $INIT
+	restart_up
+	nofile=$(bnd)
+	cp "$U/init.saved" $INIT
+	sed -i '/"bounding"/d' /etc/capabilities/llm-gateway.json
+	restart_up
+	noset=$(bnd)
+	cp "$U/caps.saved" /etc/capabilities/llm-gateway.json
+	restart_up
+	back=$(bnd)
+	echo "CapBnd: as shipped $asked; with no capabilities file $nofile; with a file that leaves bounding out $noset; as shipped again $back"
+	r=1; [ "$asked" = 0000000000000000 ] && [ "$back" = 0000000000000000 ] && [ "$nofile" != 0000000000000000 ] && [ "$noset" != 0000000000000000 ] && r=0
+	res capabilities_file_empties_the_bounding_set $r
+
+	mv /sbin/ujail /sbin/ujail.saved
+	$INIT restart
+	sleep 6
+	up=no; listening 8761 && up=yes
+	running=$(pidof llm-gateway)
+	line=$(dmesg | grep -i 'llm-gateway' | tail -1)
+	mv /sbin/ujail.saved /sbin/ujail
+	echo "without ujail: listening: $up; processes: [$running]; kernel log: $line"
+	r=1; [ "$up" = no ] && [ -z "$running" ] && r=0
+	res no_ujail_no_start $r
 	$INIT restart
 	wait_for 60 listening 8761
 }

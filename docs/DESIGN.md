@@ -180,7 +180,9 @@ the configuration, `tls.crt` and `tls.key` as files, `/var/run/llm-gateway`, `/e
 `/etc/ssl/certs` and the three names of `resolv.conf`; ujail adds `passwd` and `group`. `/var/run/llm-gateway`
 is mounted whole and not as its two files, because ujail makes the parents of a mounted file 0755,
 and the daemon refuses a snapshot in a directory open to more than root and its group: that check is
-worth more than the one directory. Its `journal/` is the one writable mount.
+worth more than the one directory. Its `journal/` is the one writable mount asked for. ujail adds
+its own `/dev`, a tmpfs of 1 MiB, and `/dev/shm`, both noexec and both writable, and procd has no option
+to take them away; `/proc` is the kernel's, with `/proc/sys` read-only.
 
 procd's own seccomp goes through `LD_PRELOAD=/lib/libpreload-seccomp.so`, which a static binary never
 loads, so `serve` installs its own allow-list (`internal/sandbox`), first thing after refusing root,
@@ -233,6 +235,17 @@ device with the CA saved before the upgrade got 200 with its old key and 401 wit
 the snapshot could be read and not changed, port 443 took one line in the log, a reboot came back by
 itself, and with the clock moved into the renewal window the ntp hook renewed the certificate under
 the same CA.
+
+`@measured docs/evidence/ 2026-11-07`, for the second step: 28 new tests red first against efb81e8, 75
+of 75 mutants and 125 of 125 gate teeth on forge and in CI; `scripts/gate-seccomp-run.sh` in CI on amd64
+and arm64, the real serve in a static binary under its filter, and dead by SIGSYS without `eventfd2`,
+`accept4`, `renameat` or `readlinkat`; on an OpenWrt 25.12.5 VM with procd 2026.03.13~58eb263d,
+`scripts/vlab-upgrade.sh` from fresh images, from r3 and from r2: the daemon as uid 32768 with
+`CapEff`, `CapBnd` and the other sets zero, `NoNewPrivs: 1` and `Seccomp: 2` on every thread, `ca.key`
+not in the jail, a request by name through to a backend that wants its key, TLS from outside under the
+CA saved before the upgrade, a stream, the journal's rotation, a reload, a respawn, a reboot, root
+refused by hand and from a procd that kept it, no call refused; and the controls, `CapBnd` full without
+the capabilities file and with a file that leaves bounding out, and no start without ujail.
 
 ## Commands
 

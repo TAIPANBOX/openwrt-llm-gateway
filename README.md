@@ -82,8 +82,8 @@ no program and asks the router nothing, and it has no way to make or change the 
 
 The daemon runs as the user `llm-gateway`, in a jail, with no capability at all. It sees only what it
 reads: its certificate and that certificate's key, the snapshot, the configuration, and the files that
-resolve a name. The CA's key is not in the jail, and only the journal's directory can be written. It
-refuses to run as root, and on amd64 and aarch64 it puts a seccomp filter on itself before anything
+resolve a name. The CA's key is not in the jail, and of what is mounted there only the journal's
+directory can be written. It refuses to run as root, and on amd64 and aarch64 it puts a seccomp filter on itself before anything
 else, under which no program can be started. On arm and mips the filter stays off for now, because no
 real run stands behind a list there yet, and the log says so in one line; the user, the jail and the
 empty capability sets are the same everywhere.

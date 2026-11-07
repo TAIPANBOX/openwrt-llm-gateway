@@ -15,7 +15,7 @@
 # networking: it needs nothing of vlab but the image, so it runs while a lab of another session is up,
 # and touches nothing on forge but its directory. Its host, 192.168.1.2 from inside, is the backend.
 set -u
-CHECKS='upgrade_ran_post_upgrade upgrade_made_the_account upgrade_restarted_the_daemon upgrade_kept_the_ca upgrade_kept_the_configuration prepare_left_the_snapshot snapshot_directory_is_roots daemon_runs_without_root every_thread_is_confined ca_key_is_not_in_the_jail only_the_journal_is_writable request_reaches_the_backend gateway_answers_after_the_upgrade journal_moved_to_var_run stream_and_journal_work_in_the_jail reload_keeps_the_daemon_confined respawn_comes_back_confined root_is_refused_by_hand root_is_refused_when_procd_keeps_it no_call_was_refused low_port_is_one_line reboot_brings_it_back ntp_hook_renews_the_certificate removal_takes_the_keys_copy_and_keeps_the_account fresh_install_makes_the_account'
+CHECKS='upgrade_ran_post_upgrade upgrade_made_the_account upgrade_restarted_the_daemon upgrade_kept_the_ca upgrade_kept_the_configuration prepare_left_the_snapshot snapshot_directory_is_roots daemon_runs_without_root every_thread_is_confined ca_key_is_not_in_the_jail only_the_journal_is_writable request_reaches_the_backend gateway_answers_after_the_upgrade journal_moved_to_var_run stream_and_journal_work_in_the_jail reload_keeps_the_daemon_confined respawn_comes_back_confined root_is_refused_by_hand root_is_refused_when_procd_keeps_it capabilities_file_empties_the_bounding_set no_ujail_no_start no_call_was_refused low_port_is_one_line reboot_brings_it_back ntp_hook_renews_the_certificate removal_takes_the_keys_copy_and_keeps_the_account fresh_install_makes_the_account'
 if [ "${1:-}" = "--selftest" ]; then for c in $CHECKS; do echo "$c"; done; exit 0; fi
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -102,6 +102,10 @@ say "  after the respawn: $(code "$KEY")"
 say "--- root"
 part root | tee -a "$out"
 say "  after the account's daemon is back: $(code "$KEY")"
+
+say "--- controls: without the capabilities file, and without ujail"
+part controls | tee -a "$out"
+say "  back as shipped: $(code "$KEY")"
 
 say "--- was any call refused?"
 part refused | tee -a "$out"

@@ -143,13 +143,15 @@ Language: Go, stdlib only. Testing tier: T3 (authorization decisions whose failu
     the user and group `llm-gateway`, `no_new_privs`, a jail with `requirejail` and no sysfs, and a
     capabilities file with all five sets named and empty, because procd 2026.03.13 (58eb263d) leaves
     alone a set the file does not name, and with no file leaves the bounding set full. The jail mounts
-    only what `serve` reads, read-only, with the journal's directory alone writable. `ca.key` and the
-    directory that holds it are never in it, and neither are the firewall's, dnsmasq's or the network's
-    configuration. `/var/run/llm-gateway` is mounted whole, because ujail makes the parents of a
+    only what `serve` reads, read-only, with the journal's directory alone writable of what is asked
+    for; ujail adds its own `/dev` (tmpfs, 1 MiB, noexec) and `/dev/shm` (noexec), which procd has no
+    option to remove. `ca.key` and the directory that holds it are never in it, and neither are the
+    firewall's, dnsmasq's or the network's configuration. `/var/run/llm-gateway` is mounted whole, because ujail makes the parents of a
     mounted file 0755, which the daemon refuses. The package depends on `procd-ujail`.
     (test: `TestInitScriptHardening`, `TestCapabilitiesFileIsEmpty`; gate: `scripts/gate-package-scripts.sh`;
     teeth in `scripts/gates-have-teeth.sh`; vlab: `daemon_runs_without_root`, `every_thread_is_confined`,
-    `ca_key_is_not_in_the_jail`, `only_the_journal_is_writable`)
+    `ca_key_is_not_in_the_jail`, `only_the_journal_is_writable`,
+    `capabilities_file_empties_the_bounding_set`, `no_ujail_no_start`)
 20. **The daemon refuses root, in one line, before anything else.** procd says nothing when the user
     it was told of does not exist, and starts the daemon as root.
     (test: `TestServeRefusesRoot`, `TestConfineComesFirst`; vlab: `root_is_refused_by_hand`,

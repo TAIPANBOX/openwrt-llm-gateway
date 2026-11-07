@@ -1,0 +1,198 @@
+Where this ran: OpenWrt 25.12.5 x86-64, the image vlab uses, procd 2026.03.13~58eb263d, in a QEMU VM of
+  its own on forge, from a fresh copy of the image, user-mode networking, no KVM. A lab of another
+  session held vlab at the time, and the script needs nothing of vlab but the image.
+From: llm-gateway-0.1.0-r2.apk, x86_64, from the signed feed,
+  sha256 eeb5ce7e3e3ccd0cfe14a5985431f34b1dde95a47b12c9d58bd4ddc6097582df
+To:   llm-gateway-0.1.0-r4.apk, x86_64, built by CI run 42375989715 from 2b521d4,
+  sha256 253b070ef93d767ea0ad6a7cad7b9ce4d7d900003e5b576d5a46efb9a920a026
+Run:  OLD_APK=... NEW_APK=... scripts/vlab-upgrade.sh
+The device is curl on forge, with the CA saved before the upgrade and the client's key. The backend is
+e2e/standin.py on forge, named by dnsmasq, and it answers 401 without the key from the key_file.
+
+13:46:40 router: a fresh copy of the image, and the backend
+13:47:19 router: OpenWrt 25.12.5 r33051-f5dae5ece4
+13:47:19 router: the two packages into /root/upg
+13:47:21 --- before: the older package, as an owner has it
+  * Command failed: ubus call service delete { "name": "llm-gateway" } (Not found)
+OK: 27.0 MiB in 183 packages
+old: llm-gateway-0.1.0-r2
+old: pid 3315, Uid: 0 0 0 0
+old: CA 99:55:44:DE:33:C2:68:95:30:3A:97:4A:87:C9:B4:84:F9:9E:15:DB:AF:E1:A6:FB:9F:C6:9F:08:06:DD:59:B0
+old: account in /etc/passwd: 0
+13:47:31   a device that trusted the old CA, with its key: 200, without: 401
+13:47:31   through to the backend: {"id": "chatcmpl-standin", "object": "chat.completion", "model": "stand-in", "choices": [{"index": 0, "message": {"role"
+13:47:31 --- upgrade: apk replaces it
+apk: (1/1) Upgrading llm-gateway (0.1.0-r2 -> 0.1.0-r4)
+apk:   Installing file to etc/config/llm-gateway.apk-new
+apk:   Executing llm-gateway-0.1.0-r4.post-upgrade
+apk: OK: 27.1 MiB in 183 packages
+new: llm-gateway-0.1.0-r4
+new: pid 3523, was 3315, Uid: 32768 32768 32768 32768
+new: exe /usr/bin/llm-gateway
+new: CA 99:55:44:DE:33:C2:68:95:30:3A:97:4A:87:C9:B4:84:F9:9E:15:DB:AF:E1:A6:FB:9F:C6:9F:08:06:DD:59:B0
+new: account llm-gateway:x:32768:32768:llm-gateway:/var/empty:/bin/false
+new: group llm-gateway:x:32768:
+new: /var/run/llm-gateway: drwxr-x--- 0 32768
+new: /var/run/llm-gateway/snapshot.json: -rw-r----- 0 32768
+new: /var/run/llm-gateway/backend.keys: -rw-r----- 0 32768
+new: /var/run/llm-gateway/journal: drwx------ 32768 32768
+new: /etc/llm-gateway: drwx------ 0 0
+new: /etc/llm-gateway/ca.key: -rw------- 0 0
+new: /etc/llm-gateway/tls.key: -rw-r----- 0 32768
+new: snapshot {"version":1,"config_sha256":"2389844d1a67538f6e5adbd076f4475e80931b4d9aafb37e38fcd97f551ebeef","name":"llm.home.arpa","listen":["192.168.1.1:8760","[fd29:2235:6b43::1]:8760","127.0.0.1:8761"],"hosts":["llm.home.arpa","localhost","192.168.1.1","fd29:2235:6b43::1","127.0.0.1"]}
+log: info llm-gateway[3513]: jail: exec-ing /usr/bin/llm-gateway
+log: err llm-gateway[3513]: llm-gateway: seccomp filter on every thread: 66 system calls allowed, any other ends the process
+log: err llm-gateway[3513]: llm-gateway: listening on 192.168.1.1:8760
+log: err llm-gateway[3513]: llm-gateway: listening on [fd29:2235:6b43::1]:8760
+log: err llm-gateway[3513]: llm-gateway: listening on 127.0.0.1:8761
+PASS upgrade_ran_post_upgrade
+PASS upgrade_made_the_account
+PASS upgrade_restarted_the_daemon
+PASS upgrade_kept_the_ca
+PASS upgrade_kept_the_configuration
+PASS prepare_left_the_snapshot
+as the account: read the snapshot: yes; read ca.key: no; wrote in the journal's directory: yes
+PASS snapshot_directory_is_roots
+13:47:36   the same device, the same key: 200, without it: 401
+PASS gateway_answers_after_the_upgrade
+13:47:36 --- jail: what the daemon is and what it can see
+procd: procd-2026.03.13~58eb263d-r1
+status: Name: llm-gateway
+status: Uid: 32768 32768 32768 32768
+status: Gid: 32768 32768 32768 32768
+status: Groups: 32768 
+status: CapInh: 0000000000000000
+status: CapPrm: 0000000000000000
+status: CapEff: 0000000000000000
+status: CapBnd: 0000000000000000
+status: CapAmb: 0000000000000000
+status: NoNewPrivs: 1
+status: Seccomp: 2
+status: Seccomp_filters: 1
+PASS daemon_runs_without_root
+threads: 7, of which not confined: 0
+PASS every_thread_is_confined
+jail holds: etc/config/llm-gateway
+jail holds: etc/group
+jail holds: etc/hosts
+jail holds: etc/llm-gateway/tls.crt
+jail holds: etc/llm-gateway/tls.key
+jail holds: etc/passwd
+jail holds: etc/resolv.conf
+jail holds: etc/ssl/certs/ca-certificates.crt
+jail holds: tmp/resolv.conf
+jail holds: tmp/resolv.conf.d/resolv.conf.auto
+jail holds: usr/bin/llm-gateway
+jail holds: var/run/llm-gateway/backend.keys
+jail holds: var/run/llm-gateway/journal/journal.log
+jail holds: var/run/llm-gateway/snapshot.json
+PASS ca_key_is_not_in_the_jail
+mount: / tmpfs ro,noatime,mode=755
+mount: /dev tmpfs rw,nosuid,noexec,noatime,size=1024k
+mount: /dev/log tmpfs rw,noatime,size=512k,mode=755
+mount: /dev/pts devpts rw,nosuid,noexec,noatime,gid=5,mode=620,ptmxmode=666
+mount: /dev/shm tmpfs rw,nosuid,nodev,noexec,relatime
+mount: /etc/config/llm-gateway ext4 ro,noatime
+mount: /etc/group ext4 ro,noatime
+mount: /etc/hosts ext4 ro,noatime
+mount: /etc/llm-gateway/tls.crt ext4 ro,noatime
+mount: /etc/llm-gateway/tls.key ext4 ro,noatime
+mount: /etc/passwd ext4 ro,noatime
+mount: /etc/resolv.conf tmpfs ro,noatime
+mount: /etc/ssl/certs ext4 ro,noatime
+mount: /proc proc rw,nosuid,nodev,noexec,noatime
+mount: /proc/sys proc ro,noatime
+mount: /tmp/resolv.conf tmpfs ro,noatime
+mount: /tmp/resolv.conf.d tmpfs ro,noatime
+mount: /usr/bin/llm-gateway ext4 ro,noatime
+mount: /var/run/llm-gateway tmpfs ro,noatime
+mount: /var/run/llm-gateway/journal tmpfs rw,noatime
+PASS only_the_journal_is_writable
+13:47:37 --- a request through the jail to the backend, by a name dnsmasq answers, with the backend's key
+  chat: {"id": "chatcmpl-standin", "object": "chat.completion", "model": "stand-in", "choices": [{"index": 0, "message": {"role": "assistant", "content": "sta
+PASS request_reaches_the_backend
+journal: -rw------- 32768 32768, 3 lines
+PASS journal_moved_to_var_run
+13:47:38 --- a stream, and the journal past its limit
+journal filled: -rw------- 32768 32768, 1048300 bytes
+  stream: 5 events, last: data: [DONE]
+journal: -rw------- 32768 1138 journal.log;-rw------- 32768 1048504 journal.log.1;
+PASS stream_and_journal_work_in_the_jail
+13:47:42 --- reload
+reload: pid 3856 -> 3993
+PASS reload_keeps_the_daemon_confined
+13:47:46   the old key: 200, the new key: 200
+13:47:46 --- respawn: the daemon killed
+respawn: pid 3993 -> 4075
+PASS respawn_comes_back_confined
+13:47:52   after the respawn: 200
+13:47:52 --- root
+by hand: exit 1: llm-gateway: refusing to run as root: the llm-gateway account is missing, or serve was started by hand
+PASS root_is_refused_by_hand
+log: err llm-gateway[4192]: llm-gateway: refusing to run as root: the llm-gateway account is missing, or serve was started by hand
+PASS root_is_refused_when_procd_keeps_it
+13:47:56   after the account's daemon is back: 200
+13:47:56 --- controls: without the capabilities file, and without ujail
+CapBnd: as shipped 0000000000000000; with no capabilities file 000001ffffffffff; with a file that leaves bounding out 000001ffffffffff; as shipped again 0000000000000000
+PASS capabilities_file_empties_the_bounding_set
+without ujail: listening: no; processes: []; kernel log: 
+PASS no_ujail_no_start
+13:48:11   back as shipped: 200
+13:48:11 --- was any call refused?
+killed by SIGSYS: 0; kernel seccomp records: 0; daemon 4806
+PASS no_call_was_refused
+13:48:12 --- lowport
+Sat Nov  7 13:48:11 2026 user.notice llm-gateway: gateway: port 443 is below 1024, which the gateway does not bind; not starting
+lines: 1; daemon: ; firewall rule: 8760
+PASS low_port_is_one_line
+13:48:24 --- reboot
+after boot: pid 2682, CA 99:55:44:DE:33:C2:68:95:30:3A:97:4A:87:C9:B4:84:F9:9E:15:DB:AF:E1:A6:FB:9F:C6:9F:08:06:DD:59:B0
+after boot: drwxr-x--- 0 32768 -rw-r----- 0 32768
+PASS reboot_brings_it_back
+13:49:31   after the reboot, the same device, the same key: 200
+13:49:31 --- ntp: the certificate nears its end on a gateway nobody restarted
+certificate until 2027-12-09; clock moved to Wed Nov 10 00:00:00 UTC 2027
+new end: 2028-12-11; CA 99:55:44:DE:33:C2:68:95:30:3A:97:4A:87:C9:B4:84:F9:9E:15:DB:AF:E1:A6:FB:9F:C6:9F:08:06:DD:59:B0
+Wed Nov 10 00:00:00 2027 user.notice llm-gateway: the certificate is near its end; restarting to renew it
+PASS ntp_hook_renews_the_certificate
+13:49:40   after the renewal, the same device, the same key: 200
+13:49:40 --- removal, then a fresh install
+  Executing llm-gateway-0.1.0-r4.pre-deinstall
+OK: 19.3 MiB in 182 packages
+removed: /var/run/llm-gateway gone; account 1; rules 0
+PASS removal_takes_the_keys_copy_and_keeps_the_account
+  Executing llm-gateway-0.1.0-r4.post-install
+  * Command failed: ubus call service delete { "name": "llm-gateway" } (Not found)
+OK: 27.1 MiB in 183 packages
+installed: account llm-gateway:x:32768:32768:llm-gateway:/var/empty:/bin/false; pid 3852; drwxr-x--- 0 32768; enabled at boot: yes
+PASS fresh_install_makes_the_account
+13:49:52   after the fresh install, the same device, the same key: 200
+13:49:52 PASS upgrade_ran_post_upgrade
+13:49:52 PASS upgrade_made_the_account
+13:49:52 PASS upgrade_restarted_the_daemon
+13:49:52 PASS upgrade_kept_the_ca
+13:49:52 PASS upgrade_kept_the_configuration
+13:49:52 PASS prepare_left_the_snapshot
+13:49:52 PASS snapshot_directory_is_roots
+13:49:53 PASS daemon_runs_without_root
+13:49:53 PASS every_thread_is_confined
+13:49:53 PASS ca_key_is_not_in_the_jail
+13:49:53 PASS only_the_journal_is_writable
+13:49:53 PASS request_reaches_the_backend
+13:49:53 PASS gateway_answers_after_the_upgrade
+13:49:53 PASS journal_moved_to_var_run
+13:49:53 PASS stream_and_journal_work_in_the_jail
+13:49:53 PASS reload_keeps_the_daemon_confined
+13:49:53 PASS respawn_comes_back_confined
+13:49:53 PASS root_is_refused_by_hand
+13:49:53 PASS root_is_refused_when_procd_keeps_it
+13:49:53 PASS capabilities_file_empties_the_bounding_set
+13:49:53 PASS no_ujail_no_start
+13:49:53 PASS no_call_was_refused
+13:49:53 PASS low_port_is_one_line
+13:49:53 PASS reboot_brings_it_back
+13:49:53 PASS ntp_hook_renews_the_certificate
+13:49:53 PASS removal_takes_the_keys_copy_and_keeps_the_account
+13:49:53 PASS fresh_install_makes_the_account
+13:49:53 checks: 27 passed, 0 failed
+13:49:53 take the router down

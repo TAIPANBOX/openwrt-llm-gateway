@@ -31,7 +31,7 @@ Feature: the daemon runs as its own user, in a jail, with nothing it does not ne
   # bound to vlab: only_the_journal_is_writable
   Scenario: only the journal can be written
     When the daemon is running
-    Then its root and every mount in it are read-only, but the journal's directory
+    Then its root and every mount in it are read-only, but the journal's directory and what ujail itself makes under /dev and /proc
 
   # bound to: TestServeRefusesRoot, TestConfineComesFirst
   # bound to vlab: root_is_refused_by_hand, root_is_refused_when_procd_keeps_it
@@ -41,11 +41,19 @@ Feature: the daemon runs as its own user, in a jail, with nothing it does not ne
     Then it refuses in one line and listens on nothing
 
   # bound to: TestCapabilitiesFileIsEmpty
-  # bound to vlab: daemon_runs_without_root
+  # bound to vlab: daemon_runs_without_root, capabilities_file_empties_the_bounding_set
   Scenario: all five capability sets are named and empty
     Given procd 2026.03.13 leaves alone a set the file does not name
     When the jail is built
     Then every set is empty, and CapBnd reads as zero
+    And with no file, or with one that leaves bounding out, CapBnd is full
+
+  # bound to: TestInitScriptHardening
+  # bound to vlab: no_ujail_no_start
+  Scenario: without ujail the service does not start
+    Given a router whose ujail is gone
+    When the service starts
+    Then procd says so and starts nothing, rather than run the daemon out of its jail
 
 Feature: the daemon filters itself, because procd cannot
 
