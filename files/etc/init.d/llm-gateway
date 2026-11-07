@@ -7,6 +7,8 @@
 # sections named llm_gateway*, which the removal script deletes. The third is `llm-gateway prepare`,
 # the root work the daemon must not need: certificates, the snapshot of where it listens, the
 # backends' keys. Everything here runs on start_service, which procd's respawn does not repeat.
+# The daemon then runs as its own user, in a jail, with no capability, and installs its own seccomp
+# filter: procd applies a profile through LD_PRELOAD, which a static binary never loads.
 
 USE_PROCD=1
 START=96
@@ -80,9 +82,10 @@ sync_dns() {
 }
 
 start_service() {
-	local enabled out rc
+	local enabled out rc cert_dir
 	config_load llm-gateway
 	config_get_bool enabled main enabled 0
+	config_get cert_dir main cert_dir /etc/llm-gateway
 	if [ "$enabled" != 1 ]; then
 		logger -t llm-gateway "disabled; set llm-gateway.main.enabled=1"
 		return 0
@@ -102,6 +105,28 @@ start_service() {
 	procd_set_param stdout 1
 	procd_set_param stderr 1
 	procd_set_param file /etc/config/llm-gateway
+	# procd drops this silently when the account does not exist and starts the daemon as root; the
+	# account was made above, and the daemon refuses root itself.
+	procd_set_param user llm-gateway
+	procd_set_param group llm-gateway
+	procd_set_param no_new_privs 1
+	# All five sets are named and empty: procd 2026.03.13 (58eb263d) reads a set that is absent as
+	# every capability, and with no file at all leaves the bounding set full.
+	procd_set_param capabilities /etc/capabilities/llm-gateway.json
+	# requirejail: no ujail on this router means no start, not a daemon out of the jail. No sysfs:
+	# nothing here reads it. procfs is for the daemon's look at its own filter. ronly leaves only
+	# the journal's directory writable.
+	procd_add_jail llm-gateway log procfs ronly requirejail
+	procd_add_jail_mount_rw /var/run/llm-gateway/journal
+	# Only what serve reads. Never ca.key or the directory that holds it, and never the
+	# firewall's, dnsmasq's or the network's configuration.
+	procd_add_jail_mount /etc/config/llm-gateway "$cert_dir/tls.crt" "$cert_dir/tls.key"
+	# The directory itself and not its two files: ujail makes the parents of a mounted file 0755, and
+	# the daemon refuses a snapshot in a directory open to more than root and its group.
+	procd_add_jail_mount /var/run/llm-gateway
+	# Names of backends, and an https backend's CA. /etc/resolv.conf links to /tmp/resolv.conf, which
+	# dnsmasq's start may point at the file in /tmp/resolv.conf.d.
+	procd_add_jail_mount /etc/hosts /etc/ssl/certs /etc/resolv.conf /tmp/resolv.conf /tmp/resolv.conf.d
 	procd_close_instance
 }
 

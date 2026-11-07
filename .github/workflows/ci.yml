@@ -21,6 +21,22 @@ jobs:
       - run: ./scripts/gate-no-wildcard.sh
       - run: ./scripts/gates-have-teeth.sh
       - run: python3 scripts/mutate.py
+  # The daemon under its own filter, on the two architectures it goes on for: the real serve in a
+  # static binary, through TLS, a backend by name, a stream and the journal's rotation; then copies
+  # of the tree whose list lacks one call must die with SIGSYS. Both runner types are free for a
+  # public repository.
+  seccomp:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: ./scripts/gate-seccomp-run.sh
   build:
     needs: test
     runs-on: ubuntu-latest

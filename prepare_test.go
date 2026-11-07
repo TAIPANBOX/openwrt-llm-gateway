@@ -627,6 +627,75 @@ func (s spyZones) NetworkAddresses(network string) ([]netip.Addr, error) {
 	return nil, errors.New("not for the daemon")
 }
 
+func TestServeRefusesRoot(t *testing.T) {
+	e, _, _ := prepareEnv(t, aBackendAndAClient)
+	runPrepare(t, e)
+	confined := false
+	e.confine = func() (int, error) { confined = true; return 0, nil }
+	e.euid = func() int { return 0 }
+	log := serveRefuses(t, e)
+	if strings.Count(log, "\n") != 1 || !strings.Contains(log, "root") {
+		t.Fatalf("want one line naming root, got %q", log)
+	}
+	if confined {
+		t.Fatal("the daemon went on to its filter as root")
+	}
+	// The same daemon as anyone else starts: it is root that is refused.
+	e.euid = func() int { return 1 }
+	daemonUp(t, e, 2)
+}
+
+func TestServeRefusesWithoutItsFilter(t *testing.T) {
+	e, _, _ := prepareEnv(t, aBackendAndAClient)
+	runPrepare(t, e)
+	e.confine = func() (int, error) { return 0, errors.New("seccomp: invalid argument") }
+	if log := serveRefuses(t, e); !strings.Contains(log, "seccomp: invalid argument") || strings.Count(log, "\n") != 1 {
+		t.Fatalf("want one line with the reason, got %q", log)
+	}
+}
+
+func TestServeNeedsTheKernelToShowItsFilter(t *testing.T) {
+	e, _, _ := prepareEnv(t, aBackendAndAClient)
+	runPrepare(t, e)
+	e.confine = func() (int, error) { return 70, nil }
+	for name, status := range map[string]func() ([]byte, error){
+		"no filter":    func() ([]byte, error) { return []byte("NoNewPrivs:\t1\nSeccomp:\t0\n"), nil },
+		"no status":    func() ([]byte, error) { return nil, errors.New("no /proc in the jail") },
+		"no new privs": func() ([]byte, error) { return []byte("NoNewPrivs:\t0\nSeccomp:\t2\n"), nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			e.procStatus = status
+			if log := serveRefuses(t, e); !strings.Contains(log, "refusing to listen") {
+				t.Fatalf("got %q", log)
+			}
+		})
+	}
+	e.procStatus = func() ([]byte, error) { return []byte("NoNewPrivs:\t1\nSeccomp:\t2\n"), nil }
+	daemonUp(t, e, 2)
+}
+
+func TestServeSaysWhereItsFilterStaysOff(t *testing.T) {
+	e, _, _ := prepareEnv(t, aBackendAndAClient)
+	runPrepare(t, e)
+	e.confine = func() (int, error) { return 0, nil }
+	asked := false
+	e.procStatus = func() ([]byte, error) { asked = true; return nil, errors.New("not read") }
+	var log bytes.Buffer
+	w := &syncWriter{w: &log}
+	e.listen = func(network, addr string) (net.Listener, error) { return net.Listen(network, "127.0.0.1:0") }
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if code := serve(ctx, e.daemon(), w); code != 0 {
+		t.Fatalf("serve exited %d: %s", code, log.String())
+	}
+	if n := strings.Count(log.String(), "seccomp"); n != 1 || !strings.Contains(log.String(), "no seccomp filter on linux/") {
+		t.Fatalf("want one line, got %q", log.String())
+	}
+	if asked {
+		t.Fatal("the daemon looked for a filter it did not install")
+	}
+}
+
 func TestServeRefusesAMissingSnapshot(t *testing.T) {
 	e, _, _ := prepareEnv(t, aBackendAndAClient)
 	runPrepare(t, e)

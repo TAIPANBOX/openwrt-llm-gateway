@@ -107,9 +107,8 @@ Gate from the survey: CI fails if the source contains `0.0.0.0`, `[::]:` as a li
 
 ## Root and the daemon
 
-The gateway leaves root in steps, each with a point to go back to. This step puts in place
-everything that must exist before the daemon can drop root, with the daemon itself still running
-as root. Its user, jail, capabilities and seccomp are the next step.
+The gateway left root in two steps, each with a point to go back to: r3 put in place everything that
+had to exist first, with the daemon still root, and r4 took root away.
 
 `llm-gateway prepare` runs as root from `start_service`, before anything else, and does what needs
 root:
@@ -157,6 +156,60 @@ answers whether it is within 30 days of its end, and `/etc/hotplug.d/ntp/50-llm-
 busybox ntpd's periodic event, every 11 minutes once the clock can be believed, and restarts the
 service, whose `prepare` renews it under the same CA.
 
+### What the daemon is
+
+`start_service` asks procd for this, and `/proc/<pid>/status` on OpenWrt 25.12.5 shows it:
+
+| Asked of procd | What the kernel shows |
+|---|---|
+| `user` and `group llm-gateway` | `Uid` and `Gid` of the account, in all four fields |
+| `no_new_privs 1` | `NoNewPrivs: 1` |
+| `capabilities`, all five sets named and empty | `CapInh`, `CapPrm`, `CapEff`, `CapBnd` and `CapAmb` all zero |
+| its own filter, not procd's | `Seccomp: 2`, on every thread |
+
+The capabilities file names all five sets because of what the procd of OpenWrt 25.12 does,
+2026.03.13 (58eb263d): a set the file leaves out is read as every capability, which leaves it as it
+was, and with no file at all ujail changes nothing, so after the setuid the effective and permitted
+sets are empty and the bounding set is still full. Later procd reads an absent set otherwise; a file
+with all five is right for both. procd also drops `user` without a word when the account does not
+exist, and starts the daemon as root in the jail, so `serve` refuses root itself, and the package and
+the init script both make the account.
+
+The jail is `procd_add_jail llm-gateway log procfs ronly requirejail`, no sysfs. It holds the binary,
+the configuration, `tls.crt` and `tls.key` as files, `/var/run/llm-gateway`, `/etc/hosts`,
+`/etc/ssl/certs` and the three names of `resolv.conf`; ujail adds `passwd` and `group`. `/var/run/llm-gateway`
+is mounted whole and not as its two files, because ujail makes the parents of a mounted file 0755,
+and the daemon refuses a snapshot in a directory open to more than root and its group: that check is
+worth more than the one directory. Its `journal/` is the one writable mount asked for. ujail adds
+its own `/dev`, a tmpfs of 1 MiB, and `/dev/shm`, both noexec and both writable, and procd has no option
+to take them away; `/proc` is the kernel's, with `/proc/sys` read-only.
+
+procd's own seccomp goes through `LD_PRELOAD=/lib/libpreload-seccomp.so`, which a static binary never
+loads, so `serve` installs its own allow-list (`internal/sandbox`), first thing after refusing root,
+with TSYNC, so every thread the runtime already has is covered, and then reads `/proc/self/status`.
+The mechanism is a copy of rollcall's: `internal/` cannot be imported from another module, rollcall's
+install needs `golang.org/x/sys`, and this repository is the standard library alone. `filter.go` is
+rollcall's byte for byte below its package line, the install is rewritten on `syscall`, and the number
+tables are generated as literals. The list is this daemon's: rollcall's, plus `splice` and `sendfile`
+(`sendfile64` on 32-bit), which net/http reaches through `io.Copy`, minus eleven calls only rollcall's
+store and interface code makes, taken out after a traced run and a read of the library's sources.
+`execve` and `execveat` are in no list.
+
+The filter goes on only where a real run stands behind the list: amd64 and arm64, in CI on both, and
+amd64 on OpenWrt. On arm and mipsel it stays off and the log says so in one line. Enabling it there
+takes a run there first: the 32-bit calls are written from the sources, and the first error would be
+SIGSYS on a router, on whatever rare path needed the missing call. A list is proved by what a static
+build does: a test binary linked with cgo starts its threads through glibc's `clone3` and `rseq`, which
+the daemon never makes, so `TestDaemonRunsUnderItsFilter` builds its child with `CGO_ENABLED=0`.
+
+Nothing here switches protocol: the proxy would put `Upgrade` back for a client that asks, and copy
+between two sockets by itself once a backend agreed. `Rewrite` takes both headers out.
+
+`kernel-seccomp` and `procd-ujail` are left out on targets marked small flash
+(`KERNEL_SECCOMP_FILTER default y if !SMALL_FLASH`, `include/target.mk`). There `requirejail` and a
+refused filter both mean no start, and that is meant: the daemon does not run in a weaker mode than
+its documentation says.
+
 Going back: the previous package reads everything as before, since `tls.key` only changed its group
 and mode, and it ignores `/var/run/llm-gateway`. A downgrade runs no post-upgrade of the older
 package, so it needs `service llm-gateway restart` by hand. The feed is replaced whole, so the
@@ -174,7 +227,7 @@ each of four runs and the signed feed installed with OpenWrt's own apk, 5 of 5 c
 GL.iNet Flint 2, Hermes paired itself and answered through the gateway, and HTTPS from a laptop
 on the LAN answered 200 with a key, 401 without one ([flint2-hermes-2026-11-01.md](evidence/flint2-hermes-2026-11-01.md)).
 
-`@measured docs/evidence/ 2026-11-07`, for the step in "Root and the daemon": 36 new tests red first
+`@measured docs/evidence/ 2026-11-07`, for the first step in "Root and the daemon": 36 new tests red first
 against 96620b5, 60 of 60 mutants caught on forge and in CI, 80 of 80 gate teeth; on an OpenWrt 25.12.5
 VM, the image vlab uses, with `scripts/vlab-upgrade.sh`, in two runs from fresh images: apk replaced a
 running r2 by CI's r3 and ran post-upgrade, the CA's fingerprint and the configuration stayed, a
@@ -182,6 +235,17 @@ device with the CA saved before the upgrade got 200 with its old key and 401 wit
 the snapshot could be read and not changed, port 443 took one line in the log, a reboot came back by
 itself, and with the clock moved into the renewal window the ntp hook renewed the certificate under
 the same CA.
+
+`@measured docs/evidence/ 2026-11-07`, for the second step: 28 new tests red first against efb81e8, 75
+of 75 mutants and 125 of 125 gate teeth on forge and in CI; `scripts/gate-seccomp-run.sh` in CI on amd64
+and arm64, the real serve in a static binary under its filter, and dead by SIGSYS without `eventfd2`,
+`accept4`, `renameat` or `readlinkat`; on an OpenWrt 25.12.5 VM with procd 2026.03.13~58eb263d,
+`scripts/vlab-upgrade.sh` from fresh images, from r3 and from r2: the daemon as uid 32768 with
+`CapEff`, `CapBnd` and the other sets zero, `NoNewPrivs: 1` and `Seccomp: 2` on every thread, `ca.key`
+not in the jail, a request by name through to a backend that wants its key, TLS from outside under the
+CA saved before the upgrade, a stream, the journal's rotation, a reload, a respawn, a reboot, root
+refused by hand and from a procd that kept it, no call refused; and the controls, `CapBnd` full without
+the capabilities file and with a file that leaves bounding out, and no start without ujail.
 
 ## Commands
 

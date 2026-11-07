@@ -45,7 +45,9 @@ func testEnv(t *testing.T, conf string) (*env, *fakeUCI) {
 			addrs: map[string][]netip.Addr{"lan": {netip.MustParseAddr("192.168.8.1")}}},
 		now: time.Now, listen: net.Listen,
 		account: func() (serviceAccount, error) { return serviceAccount{uid: testUID, gid: testGID}, nil },
-		chown:   newFakeOwners().chown}, u
+		chown:   newFakeOwners().chown,
+		euid:    func() int { return testUID },
+		confine: func() (int, error) { return 0, nil }}, u
 }
 
 var keyRE = regexp.MustCompile(`llmgw_[A-Za-z0-9_-]{43}`)

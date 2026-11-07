@@ -29,5 +29,9 @@ for need in '/etc/init.d/llm-gateway account' '/etc/init.d/llm-gateway restart' 
 	case "$up" in *"$need"*) ;; *) echo "FAIL: post-upgrade does not run: $need"; fail=1 ;; esac
 done
 if echo "$up" | grep -qE 'llm-gateway enable$'; then echo "FAIL: post-upgrade enables the service, which the owner may have switched off"; fail=1; fi
+# The init script says requirejail, so a router without ujail would not start the service: the
+# package has to bring it, and the capabilities file the jail reads.
+grep -qE '^[[:space:]]*- procd-ujail$' "$DUMP" || { echo "FAIL: the package does not depend on procd-ujail"; fail=1; }
+grep -qE 'name: llm-gateway\.json$' "$DUMP" || { echo "FAIL: the package has no capabilities file"; fail=1; }
 [ "$fail" = 0 ] || exit 1
-echo "OK: post-install, post-upgrade and pre-deinstall are in the package; post-upgrade makes the account and restarts"
+echo "OK: post-install, post-upgrade and pre-deinstall are in the package; post-upgrade makes the account and restarts; it depends on procd-ujail and carries the capabilities file"

@@ -6,7 +6,7 @@ It streams (server-sent events) when the request asks for it, as real servers do
 asks for a stream and gets a plain JSON body reports "an empty stream with no finish_reason"
 (Hermes did, on flint2, 2026-11-01). Usage is sent in the last chunk.
 
-  standin.py [host] [port]      default: every address, 8080
+  standin.py [host] [port] [key]    default: every address, 8080, no key
 """
 import json
 import sys
@@ -63,6 +63,8 @@ class H(BaseHTTPRequestHandler):
         req = json.loads(self.rfile.read(n) or b"{}")
         if self.path != "/v1/chat/completions":
             return self._json(404, {})
+        if KEY and self.headers.get("Authorization") != "Bearer " + KEY:
+            return self._json(401, {"error": "the backend's key did not arrive"})
         if req.get("stream"):
             return self._sse(req.get("model"))
         self._json(200, {"id": "chatcmpl-standin", "object": "chat.completion", "model": req.get("model"),
@@ -73,4 +75,5 @@ class H(BaseHTTPRequestHandler):
 
 host = sys.argv[1] if len(sys.argv) > 1 else ""
 port = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+KEY = sys.argv[3] if len(sys.argv) > 3 else ""
 ThreadingHTTPServer((host, port), H).serve_forever()

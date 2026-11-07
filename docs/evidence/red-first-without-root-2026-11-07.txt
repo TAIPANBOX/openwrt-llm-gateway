@@ -1,0 +1,67 @@
+Red first for the daemon without root, 2026-11-07. Run on forge, go1.27.3 linux/amd64:
+  go test -count=1 -timeout 280s -v ./...
+
+Tree: efb81e8 (main, with prepare, the daemon as root) with the new and changed tests copied in, and
+a stub that changes no behaviour and only lets them compile: the env fields euid, confine and
+procStatus, and an internal/sandbox whose functions return nothing, with no lists, no tables and an
+Insn laid out wrongly on purpose. What each guard does on its own is shown by its mutant, in
+mutants-without-root-2026-11-07.txt.
+
+FAIL  TestUpgradeNeverReachesABackend
+      access_test.go:286: the backend was asked to switch to "websocket"
+FAIL  TestDaemonRunsUnderItsFilter
+      filter_run_test.go:357: a backend was asked to switch protocol: [websocket]
+FAIL  TestInitScriptHardening
+      gates_test.go:243: start_service does not ask for "param user llm-gateway"
+FAIL  TestCapabilitiesFileIsEmpty
+      gates_test.go:298: measured nothing: open files/etc/capabilities/llm-gateway.json: no such file or directory
+FAIL  TestConfineComesFirst
+      gates_test.go:370: serve calls os.ReadFile before its filter is on
+FAIL  TestFilterKillsForbiddenCall
+      confine_linux_test.go:131: the child ended with exit status 0; want death by SIGSYS at getppid; output:
+FAIL  TestFilterKillsExec
+      confine_linux_test.go:139: the child ended with exit status 0; want death by SIGSYS at execve; output:
+FAIL  TestFilterAllowsListedCalls
+      confine_linux_test.go:153: the child's output lacks "NoNewPrivs:\t1\n"; output:
+FAIL  TestFilterCoversEveryThread
+      confine_linux_test.go:169: the child ended with exit status 0; want death by SIGSYS at getppid on the second thread; output:
+FAIL  TestFilterConstants
+      consts_linux_test.go:22: BPF_LD is 0x1 here and 0x0 in syscall
+FAIL  TestNumbers
+      filter_test.go:19: Numbers = []; want [0 1 157] (sorted, once each)
+FAIL  TestFilterAllowsOnlyTheList
+      filter_test.go:40: the program ran off its end (arch 0xc000003e, nr 0)
+FAIL  TestFilterLimits
+      filter_test.go:55: buildFilter accepted an empty list
+FAIL  TestFilterIsRollcallsCopy
+      list_test.go:29: measured nothing: open ./filter.go: no such file or directory
+FAIL  TestListNamesExistPerFamily
+      list_test.go:80: measured nothing: open ./zsysnum_linux_arm64.go: no such file or directory
+FAIL  TestListNeverAllowsAProgram
+      list_test.go:93: measured nothing: an empty list for arm64
+FAIL  TestListAllowsTheCopyPaths
+      list_test.go:112: measured nothing: an empty list for mipsle
+FAIL  TestListHoldsWhatEveryRunNeeds
+      list_test.go:147: measured nothing: an empty list for amd64
+FAIL  TestFilterOnlyWhereARealRunStandsBehindIt
+      list_test.go:165: measured nothing: open ./sandbox_linux.go: no such file or directory
+FAIL  TestListsAreReadWithCare
+      list_test.go:177: got [], <nil>
+FAIL  TestCheckStatus
+      list_test.go:216: empty: <nil>
+FAIL  TestSeccompResult
+      result_linux_test.go:19: a thread left out: <nil>
+FAIL  TestInsnIsSockFilter
+      result_linux_test.go:31: Insn: size 8, Jt at 6, Jf at 7, K at 0
+FAIL  TestInstallRefusesAProgramTheKernelWouldNot
+      result_linux_test.go:37: install took no program
+FAIL  TestServeRefusesRoot
+      prepare_test.go:636: serve exited 0, want 1: llm-gateway: listening on 192.168.8.1:8760
+FAIL  TestServeRefusesWithoutItsFilter
+      prepare_test.go:652: serve exited 0, want 1: llm-gateway: listening on 192.168.8.1:8760
+FAIL  TestServeNeedsTheKernelToShowItsFilter
+      prepare_test.go:668: serve exited 0, want 1: llm-gateway: listening on 192.168.8.1:8760
+FAIL  TestServeSaysWhereItsFilterStaysOff
+      prepare_test.go:692: want one line, got "llm-gateway: listening on 192.168.8.1:8760\nllm-gateway: listening on 127.0.0.1:8761\n"
+
+28 of 28 new tests red. The other 75 tests of the tree: all green

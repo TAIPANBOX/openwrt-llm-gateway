@@ -1,0 +1,11 @@
+The system calls the daemon makes once its filter is on, 2026-11-07, on forge, linux/amd64, kernel
+6.12: TestDaemonRunsUnderItsFilter with its static child under a small ptrace tracer, counting from
+the daemon's seccomp(2) on, entry and exit each counted, so a count is twice the calls. The tracer
+was a throwaway. Number 18446744073709551615 is the -1 ptrace reports for the return from a signal.
+This is what decided which calls left rollcall's list: a call on the list and not here was taken out
+only when the library's sources showed nothing on the daemon's path makes it either
+(internal/sandbox/seccomp/common.txt names the eleven, and the ones kept for rare paths).
+
+last call on the dying thread: read exit code 0
+42 calls after seccomp:
+read:3848 write:2412 close:988 fstat:324 mmap:24 rt_sigprocmask:34 rt_sigreturn:381 pread64:10 sched_yield:1942 madvise:418 nanosleep:4101 getpid:760 socket:376 connect:364 bind:8 listen:4 getsockname:556 getpeername:258 setsockopt:2290 getsockopt:208 clone:10 uname:4 fcntl:1308 sigaltstack:20 gettid:20 futex:6916 sched_getaffinity:10 getdents64:6 exit_group:1 epoll_ctl:1644 tgkill:760 openat:334 newfstatat:18 renameat:2 readlinkat:600 epoll_pwait:1955 accept4:346 eventfd2:2 epoll_create1:2 seccomp:2 getrandom:16 18446744073709551615:381

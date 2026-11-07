@@ -1,0 +1,41 @@
+Local gates for the daemon without root, 2026-11-07, on forge (the Mac only edited and ran one quick test).
+
+== go version go1.27.3 linux/amd64, Linux 6.12.107+deb13-amd64 x86_64, 2026-11-07T13:43:41Z
+== gofmt: []
+== go vet
+clean
+== build arm64
+7536800 bytes
+vet clean
+== build arm
+7995552 bytes
+vet clean
+== build amd64
+8171680 bytes
+vet clean
+== build mipsle
+9044159 bytes
+vet clean
+== go test -race
+ok  	github.com/TAIPANBOX/openwrt-llm-gateway	2.910s
+ok  	github.com/TAIPANBOX/openwrt-llm-gateway/internal/sandbox	1.080s
+== go test, with coverage
+ok  	github.com/TAIPANBOX/openwrt-llm-gateway	12.897s	coverage: 83.0% of statements in ./...
+ok  	github.com/TAIPANBOX/openwrt-llm-gateway/internal/sandbox	0.023s	coverage: 6.6% of statements in ./...
+total:										(statements)		88.7%
+== tests: 103
+== second run
+ok  	github.com/TAIPANBOX/openwrt-llm-gateway/internal/sandbox	0.020s
+== gate-scenarios-bound
+OK: 73 scenarios bound; 83 bound tests ran and passed
+== gate-no-wildcard
+OK: no wildcard listen address or CORS origin in 11 source files
+== gate-seccomp-run
+ok   the daemon ran under its filter: 85 lines in the list, x86_64
+ok   without eventfd2 the daemon dies by SIGSYS
+ok   without accept4 the daemon dies by SIGSYS
+ok   without renameat the daemon dies by SIGSYS
+ok   without readlinkat the daemon dies by SIGSYS
+OK: the daemon runs under its own filter on x86_64, and dies without what it needs
+== gates-have-teeth
+teeth: 125 ok, 0 bad
