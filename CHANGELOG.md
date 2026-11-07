@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased: 0.1.0-r4
+
+The daemon loses root.
+
+### Changed
+
+- The daemon runs as the user `llm-gateway`, with `no_new_privs`, in a jail (`requirejail`, read-only,
+  no sysfs) and with all five capability sets empty. The jail holds only what `serve` reads, and only
+  the journal's directory is writable. The CA's key is not in it.
+- `serve` refuses to run as root, in one line, because procd starts a daemon as root without a word
+  when its user does not exist. Nothing that starts `serve` by hand as root works any more.
+- `serve` installs its own seccomp allow-list first thing, on every thread, on amd64 and aarch64, and
+  listens only once the kernel shows it. `execve` and `execveat` are in no list. On arm and mipsel the
+  filter stays off for now, and one line in the log says so.
+- The package depends on `procd-ujail` and `ca-bundle`, and carries `/etc/capabilities/llm-gateway.json`.
+  A target without ujail or without seccomp in its kernel, as those marked small flash are by default,
+  no longer starts the service.
+- `Upgrade` and `Connection` no longer reach a backend.
+
 ## Unreleased: 0.1.0-r3
 
 The first step of taking the daemon off root: everything that must exist before it can drop root.

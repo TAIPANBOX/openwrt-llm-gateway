@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -169,11 +171,14 @@ func shellHarness(t *testing.T, script string) string {
 const initStandIns = `
 config_load() { :; }
 config_get_bool() { eval "$1=${ENABLED:-1}"; }
-config_get() { eval "$1=\"\${4:-}\""; }
+config_get() { if [ "$3" = cert_dir ] && [ -n "${CERT_DIR:-}" ]; then eval "$1=$CERT_DIR"; else eval "$1=\"\${4:-}\""; fi; }
 sync_firewall() { echo firewall; }
 sync_dns() { echo dns; }
 procd_open_instance() { echo open; }
 procd_set_param() { echo "param $*"; }
+procd_add_jail() { echo "jail $*"; }
+procd_add_jail_mount() { for p in "$@"; do echo "mount ro $p"; done; }
+procd_add_jail_mount_rw() { for p in "$@"; do echo "mount rw $p"; done; }
 procd_close_instance() { echo close; }
 logger() { while read -r line; do echo "logger $line"; done; [ $# -lt 3 ] || echo "logger $3"; }
 group_add_next() { [ -n "${NO_GROUP:-}" ] || { echo group >&2; echo 500; }; }
@@ -224,11 +229,159 @@ func TestInitPreparesBeforeAnythingElse(t *testing.T) {
 	if indexOf(trace, "param command") < 0 || !strings.HasSuffix(trace[indexOf(trace, "param command")], " serve") {
 		t.Fatalf("the instance does not run serve: %q", trace)
 	}
-	// This step leaves the daemon root: a user or a jail is the next step, and a half of one would
-	// be a daemon that cannot read what prepare left it.
+}
+
+// TestInitScriptHardening reads what the real start_service asks of procd: the daemon's own user,
+// no_new_privs, a jail it cannot start without, no capability, and no procd seccomp profile, which a
+// static binary never loads. The mounts are the point: what the daemon sees is what serve reads, the
+// journal's directory alone is writable, and the CA's key is not there.
+func TestInitScriptHardening(t *testing.T) {
+	trace := initTrace(t, "", "", "0")
+	for _, want := range []string{"param user llm-gateway", "param group llm-gateway", "param no_new_privs 1",
+		"param capabilities /etc/capabilities/llm-gateway.json", "jail llm-gateway log procfs ronly requirejail"} {
+		if !slices.Contains(trace, want) {
+			t.Errorf("start_service does not ask for %q", want)
+		}
+	}
+	allowed := []string{"/etc/config/llm-gateway", "/etc/llm-gateway/tls.crt", "/etc/llm-gateway/tls.key",
+		"/var/run/llm-gateway", "/etc/hosts", "/etc/ssl/certs", "/etc/resolv.conf", "/tmp/resolv.conf", "/tmp/resolv.conf.d"}
+	var ro, rw []string
 	for _, l := range trace {
-		if strings.HasPrefix(l, "param user") || strings.HasPrefix(l, "param group") {
-			t.Fatalf("the daemon is given a user already: %q", l)
+		switch {
+		case strings.HasPrefix(l, "param seccomp"):
+			t.Errorf("start_service asks procd for a seccomp profile, which a static binary never loads: %q", l)
+		case strings.HasPrefix(l, "jail ") && strings.Contains(l, "sysfs"):
+			t.Errorf("the jail has sysfs, which nothing here reads: %q", l)
+		case strings.HasPrefix(l, "mount ro "):
+			ro = append(ro, strings.TrimPrefix(l, "mount ro "))
+		case strings.HasPrefix(l, "mount rw "):
+			rw = append(rw, strings.TrimPrefix(l, "mount rw "))
+		}
+	}
+	for _, p := range ro {
+		if !slices.Contains(allowed, p) {
+			t.Errorf("the jail mounts %s, which serve does not read", p)
+		}
+	}
+	for _, p := range append(ro, rw...) {
+		for _, never := range []string{"ca.key", "ca.crt", "/etc/config/dhcp", "/etc/config/firewall", "/etc/config/network", "/etc/config/system"} {
+			if strings.Contains(p, never) {
+				t.Errorf("the jail mounts %s", p)
+			}
+		}
+		// A directory that holds what must not be there is that thing mounted by another name.
+		for _, holder := range []string{"/", "/etc", "/etc/config", "/etc/llm-gateway", "/var", "/var/run", "/tmp"} {
+			if strings.TrimSuffix(p, "/") == strings.TrimSuffix(holder, "/") {
+				t.Errorf("the jail mounts %s, which holds what it must not", p)
+			}
+		}
+	}
+	if len(ro) == 0 {
+		t.Fatalf("measured nothing: no mounts in %q", trace)
+	}
+	if !slices.Equal(rw, []string{"/var/run/llm-gateway/journal"}) {
+		t.Errorf("writable in the jail: %v, want the journal's directory alone", rw)
+	}
+	// A cert_dir of the owner's own is followed, and its CA key stays out.
+	moved := initTrace(t, "CERT_DIR=/srv/gw", "", "0")
+	if !slices.Contains(moved, "mount ro /srv/gw/tls.key") || slices.Contains(moved, "mount ro /etc/llm-gateway/tls.key") {
+		t.Errorf("the jail does not follow cert_dir: %q", moved)
+	}
+}
+
+// TestCapabilitiesFileIsEmpty: all five sets named and empty. procd 2026.03.13 (58eb263d) leaves a
+// set the file does not name as it is, and with no file at all it leaves the bounding set full.
+func TestCapabilitiesFileIsEmpty(t *testing.T) {
+	const path = "files/etc/capabilities/llm-gateway.json"
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("measured nothing: %v", err)
+	}
+	var sets map[string][]string
+	if err := json.Unmarshal(raw, &sets); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	for _, name := range []string{"bounding", "effective", "inheritable", "permitted", "ambient"} {
+		caps, ok := sets[name]
+		if !ok {
+			t.Errorf("the set %s is not named, which procd reads as leaving it alone", name)
+		}
+		if len(caps) != 0 {
+			t.Errorf("the set %s grants %v", name, caps)
+		}
+	}
+	if len(sets) != 5 {
+		t.Errorf("%d sets, want 5: %v", len(sets), sets)
+	}
+	stage := staged(t)
+	if !bytes.Equal(raw, readAll(t, filepath.Join(stage, "root", "etc", "capabilities", "llm-gateway.json"))) {
+		t.Error("the package does not carry the file")
+	}
+	if !strings.Contains(string(readAll(t, filepath.Join(stage, "run-mkpkg.sh"))), "procd-ujail") {
+		t.Error("the package does not depend on procd-ujail, and requirejail means no jail, no start")
+	}
+}
+
+// TestConfineComesFirst: before the daemon opens a file or a socket it has refused root and put its
+// filter on. Everything after this runs filtered, so the list holds every call it makes.
+func TestConfineComesFirst(t *testing.T) {
+	dir := daemonSources()
+	path := filepath.Join(dir, "main.go")
+	f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatalf("measured nothing: %v", err)
+	}
+	var body []ast.Stmt
+	for _, d := range f.Decls {
+		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name.Name == "serve" && fn.Recv == nil {
+			body = fn.Body.List
+		}
+	}
+	if len(body) == 0 {
+		t.Fatalf("measured nothing: no func serve in %s", path)
+	}
+	calls := func(n ast.Node) []string {
+		var out []string
+		ast.Inspect(n, func(n ast.Node) bool {
+			if c, ok := n.(*ast.CallExpr); ok {
+				switch fun := c.Fun.(type) {
+				case *ast.Ident:
+					out = append(out, fun.Name)
+				case *ast.SelectorExpr:
+					if id, ok := fun.X.(*ast.Ident); ok {
+						out = append(out, id.Name+"."+fun.Sel.Name)
+					}
+				}
+			}
+			return true
+		})
+		return out
+	}
+	free := []string{"log.New", "e.euid", "lg.Print"}
+	euidAt, confinedAt := -1, -1
+	for i, s := range body {
+		for _, c := range calls(s) {
+			switch {
+			case c == "e.euid" && euidAt < 0:
+				euidAt = i
+			case c == "confined" && confinedAt < 0:
+				confinedAt = i
+			case confinedAt < 0 && !slices.Contains(free, c):
+				t.Errorf("serve calls %s before its filter is on", c)
+			}
+		}
+	}
+	if euidAt < 0 || confinedAt < 0 || euidAt > confinedAt {
+		t.Fatalf("serve checks root at statement %d and puts its filter on at %d", euidAt, confinedAt)
+	}
+	// And a refusal of either ends it.
+	for _, i := range []int{euidAt, confinedAt} {
+		ifs, ok := body[i].(*ast.IfStmt)
+		if !ok || len(ifs.Body.List) == 0 {
+			t.Fatalf("statement %d of serve is no check", i)
+		}
+		if _, ok := ifs.Body.List[len(ifs.Body.List)-1].(*ast.ReturnStmt); !ok {
+			t.Errorf("statement %d of serve goes on after a refusal", i)
 		}
 	}
 }

@@ -100,7 +100,8 @@ Language: Go, stdlib only. Testing tier: T3 (authorization decisions whose failu
     ca-key-given-to-the-group, prepare-does-not-lock)
 15. **`serve` works only from what root prepared.** The snapshot, `backend.keys`, the leaf and the
     configuration, and nothing else: no program, no ubus, neither the firewall's nor dnsmasq's
-    configuration, no `key_file`. `daemonEnv` has no way to them. A snapshot that is missing,
+    configuration, no `key_file`. Nothing here switches protocol either: `Upgrade` and `Connection`
+    do not reach a backend (test: `TestUpgradeNeverReachesABackend`; mutant: upgrade-passes-through). `daemonEnv` has no way to them. A snapshot that is missing,
     damaged, of another version, made from another configuration, or naming anything `ListenAddrs`
     could not have produced stops the start: there is no fallback, because a fallback would need
     root.
@@ -138,8 +139,39 @@ Language: Go, stdlib only. Testing tier: T3 (authorization decisions whose failu
     (test: `TestPortBelow1024IsRefused`, `TestInitRefusalIsOneLineAndStartsNothing`; vlab:
     `low_port_is_one_line`; mutants: port-below-1024-accepted, port-1024-refused)
 
-The daemon still runs as root at this point. Its user, jail, capabilities and seccomp are the next
-step; invariants 14 to 16 are what that step stands on.
+19. **The daemon runs as its own user, in a jail, with no capability.** `start_service` gives procd
+    the user and group `llm-gateway`, `no_new_privs`, a jail with `requirejail` and no sysfs, and a
+    capabilities file with all five sets named and empty, because procd 2026.03.13 (58eb263d) leaves
+    alone a set the file does not name, and with no file leaves the bounding set full. The jail mounts
+    only what `serve` reads, read-only, with the journal's directory alone writable. `ca.key` and the
+    directory that holds it are never in it, and neither are the firewall's, dnsmasq's or the network's
+    configuration. `/var/run/llm-gateway` is mounted whole, because ujail makes the parents of a
+    mounted file 0755, which the daemon refuses. The package depends on `procd-ujail`.
+    (test: `TestInitScriptHardening`, `TestCapabilitiesFileIsEmpty`; gate: `scripts/gate-package-scripts.sh`;
+    teeth in `scripts/gates-have-teeth.sh`; vlab: `daemon_runs_without_root`, `every_thread_is_confined`,
+    `ca_key_is_not_in_the_jail`, `only_the_journal_is_writable`)
+20. **The daemon refuses root, in one line, before anything else.** procd says nothing when the user
+    it was told of does not exist, and starts the daemon as root.
+    (test: `TestServeRefusesRoot`, `TestConfineComesFirst`; vlab: `root_is_refused_by_hand`,
+    `root_is_refused_when_procd_keeps_it`; mutant: serve-as-root-allowed)
+21. **The daemon filters itself, first thing, on every thread, and nothing can start a program.** procd
+    applies a profile through LD_PRELOAD, which a static binary never loads, so `serve` installs its
+    own allow-list (`internal/sandbox`) with TSYNC, right after refusing root, and listens only once
+    `/proc/self/status` shows `Seccomp: 2` and `NoNewPrivs: 1`. `execve` and `execveat` are in no list.
+    The filter goes on only where a real run stands behind the list, amd64 and arm64 now; elsewhere it
+    stays off and one line says so, since a wrong list is a daemon that dies on a rare path. A list for
+    another architecture is enabled by running the daemon there, not by editing a build line.
+    `internal/sandbox/filter.go` is rollcall's, byte for byte below its package line.
+    (test: `TestDaemonRunsUnderItsFilter`, `TestFilterKillsExec`, `TestFilterKillsForbiddenCall`,
+    `TestFilterCoversEveryThread`, `TestFilterAllowsListedCalls`, `TestListNeverAllowsAProgram`,
+    `TestListHoldsWhatEveryRunNeeds`, `TestListAllowsTheCopyPaths`, `TestListNamesExistPerFamily`,
+    `TestFilterOnlyWhereARealRunStandsBehindIt`, `TestFilterIsRollcallsCopy`, `TestServeRefusesWithoutItsFilter`,
+    `TestServeNeedsTheKernelToShowItsFilter`, `TestServeSaysWhereItsFilterStaysOff`; gate:
+    `scripts/gate-seccomp-run.sh`, in CI on amd64 and arm64, and `TestConfineComesFirst`; vlab:
+    `no_call_was_refused`; mutants: filter-failure-ignored, filter-unseen-still-listens, status-never-read,
+    filter-off-goes-unsaid, filter-after-the-configuration, no-tsync, thread-left-out-passes,
+    no-new-privs-not-set, execve-in-the-list, list-misses-a-needed-call, status-takes-strict-mode,
+    unlisted-calls-pass, another-architecture-passes)
 
 ## Gates
 
@@ -151,14 +183,19 @@ step; invariants 14 to 16 are what that step stands on.
   program it could start and on any of the root work (`DAEMON_SRC` points it at a planted tree).
 - `TestInitPreparesBeforeAnythingElse` and its neighbours run the real init script's `start_service`
   against stand-ins; `TestPackageRunsPostUpgrade` runs the real post-upgrade from `mkapk.sh`.
-- `scripts/gate-package-scripts.sh`: the built package's scripts, read back from `apk adbdump`, run
-  by `mkapk.sh` on every package.
+- `TestConfineComesFirst`: nothing but the refusal of root comes before the filter in `serve`.
+- `scripts/gate-package-scripts.sh`: the built package's scripts, its dependency on `procd-ujail` and
+  its capabilities file, read back from `apk adbdump`, run by `mkapk.sh` on every package.
+- `scripts/gate-seccomp-run.sh`: the real `serve`, static, under its filter on this kernel, then copies
+  whose list lacks one call must die by SIGSYS. CI runs it on amd64 and arm64.
 - `scripts/gates-have-teeth.sh`: each gate red on its plant, green when clean, "measured nothing"
   without its subject.
 - `python3 scripts/mutate.py`: every mutant caught by its named test.
 - `scripts/vlab-e2e.sh`: the real firewall, on forge (not in CI; evidence in `docs/evidence/`).
-- `scripts/vlab-upgrade.sh`: the released package replaced by this tree's on a real OpenWrt 25.12
-  router, a reboot, and the certificate's renewal (not in CI; evidence in `docs/evidence/`).
+- `scripts/vlab-upgrade.sh`: an older package replaced by this tree's on a real OpenWrt 25.12 router,
+  in a QEMU VM of its own on forge: the jail, the kernel's word on the daemon, a request through to a
+  backend, a stream, the journal, a reload, a respawn, a reboot, and the certificate's renewal (not in
+  CI; evidence in `docs/evidence/`).
 - `scripts/gate-feed.sh` and `scripts/teeth-feed.sh`: the signed feed, in the pinned container on
   the Mac's Docker (forge with `FEED_SIGN_ON=forge`), run by `scripts/publish-feed.sh` before every
   push; `scripts/vlab-feed.sh`: the feed on a real router, in vlab on forge.

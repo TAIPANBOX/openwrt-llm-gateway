@@ -271,3 +271,21 @@ func TestForeignHostIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestUpgradeNeverReachesABackend(t *testing.T) {
+	tg := newTestGateway(t)
+	r := chatRequest("qwen3:14b", testKey)
+	r.Header.Set("Connection", "Upgrade")
+	r.Header.Set("Upgrade", "websocket")
+	if w := tg.do(r); w.Code != http.StatusOK {
+		t.Fatalf("got %d, want the request answered as a plain one", w.Code)
+	}
+	tg.backend.mu.Lock()
+	defer tg.backend.mu.Unlock()
+	if got := tg.backend.last.Header.Get("Upgrade"); got != "" {
+		t.Fatalf("the backend was asked to switch to %q", got)
+	}
+	if got := tg.backend.last.Header.Get("Connection"); strings.Contains(strings.ToLower(got), "upgrade") {
+		t.Fatalf("the backend got Connection: %s", got)
+	}
+}

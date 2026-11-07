@@ -1,0 +1,85 @@
+# System calls the daemon may make once its filter is on, on every family (aarch64, amd64, arm, mips).
+# serve installs its own filter from these at start (internal/sandbox). One name per line; a name must
+# exist on all four families (TestListNamesExistPerFamily) or it belongs in a family list.
+#
+# Copied from rollcall 6cbface packaging/seccomp, and then made this daemon's. Added: splice and
+# sendfile, which net/http reaches through io.Copy between a socket and a socket or a file; no path
+# here gets there today, by chance, and SIGSYS is a dear way to find out. Removed, because only
+# rollcall's store and interface code makes them and neither the standard library's net, crypto and
+# os paths here nor a traced run do: dup3, faccessat, fchmod, fchmodat, fdatasync, fsync, ftruncate,
+# ioctl, pwrite64, renameat2, unlinkat.
+#
+# Kept although a run may not show them, because a rare path of the runtime or the library makes
+# them: getdents64 and readlinkat (crypto/x509 reading /etc/ssl/certs for an https backend), lseek
+# (sendfile), mkdirat (the journal's directory when it is gone), mprotect and clone3 (the runtime),
+# restart_syscall (the kernel resuming an interrupted sleep), sendto, recvfrom, sendmsg, recvmsg
+# (the resolver and net), prctl (runtime/set_vma_name_linux.go, PR_SET_VMA on every new mapping).
+#
+# Never here: execve and execveat. Nothing on the daemon's path starts a program, and with the filter
+# on nothing can (TestListNeverAllowsAProgram, TestFilterKillsExec, TestServeNeverExecs).
+#
+# The filter goes on only where a real run stands behind the list: amd64 and aarch64
+# (TestDaemonRunsUnderItsFilter, in CI's seccomp job on both).
+accept4
+bind
+clock_gettime
+clock_nanosleep
+clone
+clone3
+close
+connect
+epoll_create1
+epoll_ctl
+epoll_pwait
+eventfd2
+exit
+exit_group
+fcntl
+fstat
+futex
+getdents64
+getegid
+geteuid
+getgid
+getpeername
+getpid
+getrandom
+getsockname
+getsockopt
+gettid
+getuid
+listen
+lseek
+madvise
+mkdirat
+mprotect
+munmap
+nanosleep
+openat
+pipe2
+prctl
+pread64
+prlimit64
+read
+readlinkat
+recvfrom
+recvmsg
+renameat
+restart_syscall
+rt_sigaction
+rt_sigprocmask
+rt_sigreturn
+sched_getaffinity
+sched_yield
+sendfile
+sendmsg
+sendto
+setsockopt
+shutdown
+sigaltstack
+socket
+splice
+tgkill
+uname
+write
+writev

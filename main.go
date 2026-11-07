@@ -18,11 +18,14 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/TAIPANBOX/openwrt-llm-gateway/internal/sandbox"
 )
 
 var version = "dev"
@@ -40,9 +43,15 @@ type env struct {
 	// firewallPath and reloadFirewall serve models-zone.
 	firewallPath   string
 	reloadFirewall func() error
-	// account and chown serve prepare, which gives files to the account the daemon will run as.
+	// account and chown serve prepare, which gives files to the account the daemon runs as.
 	account func() (serviceAccount, error)
 	chown   func(path string, uid, gid int) error
+	// euid, confine and procStatus are the daemon's own: who it is, its seccomp filter, and what
+	// the kernel says about it. The tests stand in for them, because a filter cannot be taken off a
+	// process, and a test run as root must not fail for that.
+	euid       func() int
+	confine    func() (int, error)
+	procStatus func() ([]byte, error)
 }
 
 // daemonEnv is everything serve may touch. It is its own type so that the daemon cannot reach the
@@ -53,10 +62,14 @@ type daemonEnv struct {
 	resolver   Resolver
 	now        func() time.Time
 	listen     func(network, addr string) (net.Listener, error)
+	euid       func() int
+	confine    func() (int, error)
+	procStatus func() ([]byte, error)
 }
 
 func (e *env) daemon() *daemonEnv {
-	return &daemonEnv{configPath: e.configPath, runDir: e.runDir, resolver: e.resolver, now: e.now, listen: e.listen}
+	return &daemonEnv{configPath: e.configPath, runDir: e.runDir, resolver: e.resolver, now: e.now, listen: e.listen,
+		euid: e.euid, confine: e.confine, procStatus: e.procStatus}
 }
 
 func defaultEnv() *env {
@@ -79,7 +92,10 @@ func defaultEnv() *env {
 		},
 		account: lookupAccount,
 		// Lchown, never Chown: what stands in the journal's directory is not to be followed.
-		chown: os.Lchown,
+		chown:      os.Lchown,
+		euid:       os.Geteuid,
+		confine:    sandbox.Confine,
+		procStatus: func() ([]byte, error) { return os.ReadFile("/proc/self/status") },
 	}
 }
 
@@ -414,6 +430,30 @@ func renewDue(stderr io.Writer, e *env) int {
 	return 0
 }
 
+// confined puts the filter on and says so, in one line either way. Where it stays off, the daemon
+// goes on; where it is on, the kernel has to show it, or the daemon does not listen.
+func confined(e *daemonEnv, lg *log.Logger) bool {
+	n, err := e.confine()
+	if err != nil {
+		lg.Printf("refusing to run without its seccomp filter: %v", err)
+		return false
+	}
+	if n == 0 {
+		lg.Printf("no seccomp filter on linux/%s: it goes on only where a real run stands behind the list", runtime.GOARCH)
+		return true
+	}
+	status, err := e.procStatus()
+	if err == nil {
+		err = sandbox.CheckStatus(status)
+	}
+	if err != nil {
+		lg.Printf("refusing to listen: %v", err)
+		return false
+	}
+	lg.Printf("seccomp filter on every thread: %d system calls allowed, any other ends the process", n)
+	return true
+}
+
 func caFingerprint(dir string) string {
 	raw, err := os.ReadFile(filepath.Join(dir, caCertFile))
 	if err != nil {
@@ -493,9 +533,19 @@ func readDomain(dhcpPath string) string {
 }
 
 // serve runs until ctx ends. It binds only what the snapshot names, TLS on the zone addresses and
-// plain HTTP on loopback, and works only from what prepare left (invariant 15).
+// plain HTTP on loopback, and works only from what prepare left (invariant 15). It refuses root
+// and puts its seccomp filter on before anything else (invariants 20 and 21).
 func serve(ctx context.Context, e *daemonEnv, logw io.Writer) int {
 	lg := log.New(logw, "llm-gateway: ", 0)
+	// procd says nothing when the user it was told to use does not exist: it starts the daemon as
+	// root, in the jail. So the daemon checks.
+	if e.euid() == 0 {
+		lg.Print("refusing to run as root: the llm-gateway account is missing, or serve was started by hand")
+		return 1
+	}
+	if !confined(e, lg) {
+		return 1
+	}
 	raw, err := os.ReadFile(e.configPath)
 	if err != nil {
 		lg.Print(err)

@@ -16,8 +16,12 @@ ARCH=${3:-aarch64_cortex-a53}
 # r2: the r1 packages named every entry nobody:nobody (see run_mkpkg); the same version with other
 # owners would be a second package under one name.
 # r3: `llm-gateway prepare`, the account, the journal under /var/run, post-upgrade, the ntp hook.
-PKGREL=${PKGREL:-3}
+# r4: the daemon runs as its own user, in a jail, with no capability and its own seccomp filter.
+PKGREL=${PKGREL:-4}
 PKG=llm-gateway
+# procd-ujail: the init script's requirejail means no jail, no start. ca-bundle: the jail mounts
+# /etc/ssl/certs, and ujail refuses a mount of what is not there.
+DEPENDS="libc ubus jsonfilter procd-ujail ca-bundle"
 DESCRIPTION="The house model servers behind one name on the router: a key per client, HTTPS under a name-constrained house CA, zone rules and a journal without content."
 OUT="${PKG}-${VERSION}-r${PKGREL}.apk"
 ALPINE=${ALPINE:-alpine@sha256:020dfcbaaf4cc1078bf2d9c7ba31a8466e334061dcd2f248001d68f79e52c000}
@@ -27,10 +31,11 @@ BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
 
 DATA="$BUILD/root"
-mkdir -p "$DATA/usr/bin" "$DATA/etc/init.d" "$DATA/etc/config" "$DATA/etc/hotplug.d/ntp" "$DATA/lib/upgrade/keep.d"
+mkdir -p "$DATA/usr/bin" "$DATA/etc/init.d" "$DATA/etc/config" "$DATA/etc/capabilities" "$DATA/etc/hotplug.d/ntp" "$DATA/lib/upgrade/keep.d"
 install -m 0755 "$BIN"                                     "$DATA/usr/bin/$PKG"
 install -m 0755 "$SRC/files/etc/init.d/$PKG"               "$DATA/etc/init.d/$PKG"
 install -m 0644 "$SRC/files/etc/config/$PKG"               "$DATA/etc/config/$PKG"
+install -m 0644 "$SRC/files/etc/capabilities/$PKG.json"    "$DATA/etc/capabilities/$PKG.json"
 install -m 0644 "$SRC/files/etc/hotplug.d/ntp/50-$PKG"     "$DATA/etc/hotplug.d/ntp/50-$PKG"
 install -m 0644 "$SRC/files/lib/upgrade/keep.d/$PKG"       "$DATA/lib/upgrade/keep.d/$PKG"
 
@@ -92,7 +97,7 @@ if [ -n "${MKAPK_STAGE:-}" ]; then
 		echo 'apk mkpkg \\'
 		echo "	--info 'name:$PKG' --info 'version:$VERSION-r$PKGREL' --info 'arch:$ARCH' \\"
 		echo "	--info 'license:MIT' --info 'origin:$PKG' --info 'url:https://github.com/TAIPANBOX/openwrt-llm-gateway' \\"
-		echo "	--info 'maintainer:TAIPANBOX' --info 'depends:libc ubus jsonfilter' \\"
+		echo "	--info 'maintainer:TAIPANBOX' --info 'depends:$DEPENDS' \\"
 		echo "	--info 'description:$DESCRIPTION' \\"
 		echo "	--script post-install:post-install --script post-upgrade:post-upgrade --script pre-deinstall:pre-deinstall \\"
 		echo "	--files \"\$t/root\" --output $OUT && rm -rf \"\$t\" && echo $OUT"
@@ -147,7 +152,7 @@ run_mkpkg \
 	--info "url:https://github.com/TAIPANBOX/openwrt-llm-gateway" \
 	--info "maintainer:TAIPANBOX" \
 	--info "description:$DESCRIPTION" \
-	--info "depends:libc ubus jsonfilter" \
+	--info "depends:$DEPENDS" \
 	--script "post-install:$BUILD/post-install" \
 	--script "post-upgrade:$BUILD/post-upgrade" \
 	--script "pre-deinstall:$BUILD/pre-deinstall" \

@@ -5,7 +5,8 @@ test to catch each break.
 Layer 7 of the house testing rule, for the T3 invariants: the key (1), the client's models (2),
 the browser (3), where it listens (4), what the journal keeps (5), nothing leaves the house (7),
 the house CA's reach and who may change it (14), what the daemon works from (15), who can change
-the snapshot (16), the ports (18), and the limits. Each mutant is applied to a fresh copy of the tree; the
+the snapshot (16), the ports (18), the daemon's refusal of root and its filter (20, 21), and the
+limits. Each mutant is applied to a fresh copy of the tree; the
 named tests must FAIL on it. A mutant whose text is not found exactly once stops the run, so a
 refactor cannot quietly turn a mutant into a no-op.
 
@@ -268,6 +269,67 @@ MUTANTS = [
      "leaf.NotAfter.Sub(now) >= leafRenewal",
      "leaf.NotAfter.After(now)",
      ["TestRenewDueSaysWhenTheCertificateNearsItsEnd"]),
+    # The daemon without root (invariants 19 to 21).
+    ("serve-as-root-allowed", "main.go",
+     "\tif e.euid() == 0 {\n",
+     "\tif false && e.euid() == 0 {\n",
+     ["TestServeRefusesRoot"]),
+    ("filter-failure-ignored", "main.go",
+     "\t\tlg.Printf(\"refusing to run without its seccomp filter: %v\", err)\n\t\treturn false\n",
+     "\t\tlg.Printf(\"refusing to run without its seccomp filter: %v\", err)\n\t\treturn true\n",
+     ["TestServeRefusesWithoutItsFilter"]),
+    ("filter-unseen-still-listens", "main.go",
+     "\t\tlg.Printf(\"refusing to listen: %v\", err)\n\t\treturn false\n",
+     "\t\tlg.Printf(\"refusing to listen: %v\", err)\n\t\treturn true\n",
+     ["TestServeNeedsTheKernelToShowItsFilter"]),
+    ("status-never-read", "main.go",
+     "\t\terr = sandbox.CheckStatus(status)\n",
+     "\t\t_ = status\n",
+     ["TestServeNeedsTheKernelToShowItsFilter"]),
+    ("filter-off-goes-unsaid", "main.go",
+     "\t\tlg.Printf(\"no seccomp filter on linux/%s: it goes on only where a real run stands behind the list\", runtime.GOARCH)\n",
+     "\t\t_ = runtime.GOARCH\n",
+     ["TestServeSaysWhereItsFilterStaysOff"]),
+    ("filter-after-the-configuration", "main.go",
+     "\tif !confined(e, lg) {\n\t\treturn 1\n\t}\n\traw, err := os.ReadFile(e.configPath)\n\tif err != nil {\n\t\tlg.Print(err)\n\t\treturn 1\n\t}\n",
+     "\traw, err := os.ReadFile(e.configPath)\n\tif err != nil {\n\t\tlg.Print(err)\n\t\treturn 1\n\t}\n\tif !confined(e, lg) {\n\t\treturn 1\n\t}\n",
+     ["TestConfineComesFirst"]),
+    ("upgrade-passes-through", "gateway.go",
+     '"X-Real-Ip", "Upgrade", "Connection"}',
+     '"X-Real-Ip"}',
+     ["TestUpgradeNeverReachesABackend"]),
+    ("no-tsync", "internal/sandbox/sandbox_linux.go",
+     "seccompFilterFlagTSYNC = 1\n",
+     "seccompFilterFlagTSYNC = 0\n",
+     ["TestFilterCoversEveryThread"]),
+    ("thread-left-out-passes", "internal/sandbox/sandbox_linux.go",
+     "\tcase r != 0:\n",
+     "\tcase false && r != 0:\n",
+     ["TestSeccompResult"]),
+    ("no-new-privs-not-set", "internal/sandbox/sandbox_linux.go",
+     "syscall.SYS_PRCTL, prSetNoNewPrivs, 1, 0, 0, 0, 0)",
+     "syscall.SYS_PRCTL, prSetNoNewPrivs, 0, 0, 0, 0, 0)",
+     ["TestFilterAllowsListedCalls"]),
+    ("execve-in-the-list", "internal/sandbox/seccomp/common.txt",
+     "\naccept4\n",
+     "\naccept4\nexecve\n",
+     ["TestListNeverAllowsAProgram", "TestFilterKillsExec"]),
+    ("list-misses-a-needed-call", "internal/sandbox/seccomp/common.txt",
+     "\nrenameat\n",
+     "\n",
+     ["TestListHoldsWhatEveryRunNeeds"]),
+    ("status-takes-strict-mode", "internal/sandbox/list.go",
+     'case seccomp != "2":',
+     'case seccomp == "":',
+     ["TestCheckStatus"]),
+    ("unlisted-calls-pass", "internal/sandbox/filter.go",
+     "\t\tInsn{Code: bpfRET | bpfK, K: retKillProcess},\n\t\tInsn{Code: bpfRET | bpfK, K: retAllow},\n",
+     "\t\tInsn{Code: bpfRET | bpfK, K: retAllow},\n\t\tInsn{Code: bpfRET | bpfK, K: retAllow},\n",
+     ["TestFilterAllowsOnlyTheList", "TestFilterIsRollcallsCopy"]),
+    ("another-architecture-passes", "internal/sandbox/filter.go",
+     "\t\t{Code: bpfRET | bpfK, K: retKillProcess},\n\t\t{Code: bpfLD | bpfW | bpfABS, K: offNr},\n",
+     "\t\t{Code: bpfRET | bpfK, K: retAllow},\n\t\t{Code: bpfLD | bpfW | bpfABS, K: offNr},\n",
+     ["TestFilterAllowsOnlyTheList", "TestFilterIsRollcallsCopy"]),
 ]
 
 
@@ -275,11 +337,12 @@ def copy_tree(dst):
     for name in os.listdir(REPO):
         if name.endswith(".go") or name in ("go.mod", "go.sum"):
             shutil.copy2(os.path.join(REPO, name), dst)
+    shutil.copytree(os.path.join(REPO, "internal"), os.path.join(dst, "internal"))
 
 
 def go_test(cwd, tests):
     pattern = "^(" + "|".join(tests) + ")$"
-    r = subprocess.run(["go", "test", "-count=1", "-timeout", "60s", "-run", pattern, "."],
+    r = subprocess.run(["go", "test", "-count=1", "-timeout", "60s", "-run", pattern, "./..."],
                        cwd=cwd, capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr
 

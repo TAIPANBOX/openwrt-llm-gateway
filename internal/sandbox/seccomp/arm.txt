@@ -1,0 +1,20 @@
+# 32-bit ARM (EABI) only, as rollcall has it, with sendfile64, which syscall.Sendfile makes on 32-bit.
+# The filter is off on arm: no real run stands behind this list yet, and it is here for the day one
+# does (sandbox_off.go). mmap2 (EABI has no mmap), brk (runtime/malloc.go sbrk0), open (runtime·open),
+# futex_time64 (runtime/os_linux32.go), fstat64 and fstatat64, and the 32-bit uid calls.
+_llseek
+brk
+clock_gettime64
+fcntl64
+fstat64
+fstatat64
+futex_time64
+getegid32
+geteuid32
+getgid32
+getuid32
+mmap2
+open
+sendfile64
+sigreturn
+ugetrlimit

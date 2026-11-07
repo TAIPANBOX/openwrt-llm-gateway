@@ -78,8 +78,18 @@ service found out when it started, and refuses that once the configuration has m
 Starting the service runs two things. `llm-gateway prepare`, as root, reads the firewall, netifd and
 dnsmasq, looks after the certificates, and leaves a snapshot of where to listen and a copy of the
 backends' keys in `/var/run/llm-gateway`. `llm-gateway serve` then works from that alone: it starts
-no program and asks the router nothing, and it has no way to make or change the CA. The daemon still
-runs as root for now; this split is what lets it stop.
+no program and asks the router nothing, and it has no way to make or change the CA.
+
+The daemon runs as the user `llm-gateway`, in a jail, with no capability at all. It sees only what it
+reads: its certificate and that certificate's key, the snapshot, the configuration, and the files that
+resolve a name. The CA's key is not in the jail, and only the journal's directory can be written. It
+refuses to run as root, and on amd64 and aarch64 it puts a seccomp filter on itself before anything
+else, under which no program can be started. On arm and mips the filter stays off for now, because no
+real run stands behind a list there yet, and the log says so in one line; the user, the jail and the
+empty capability sets are the same everywhere.
+
+The jail needs `procd-ujail` and the filter needs a kernel built with seccomp, which OpenWrt leaves out
+on targets marked small flash. Without either the service does not start, rather than run outside them.
 
 If `prepare` refuses, the reason is one line in `logread`, and nothing changed. In particular, a
 domain it cannot read or a CA it cannot use stops it, because a new CA would mean every device

@@ -38,7 +38,7 @@ while IFS='|' read -r file line go vl; do
 		echo "FAIL: $file:$line: scenario with no binding"; fail=1
 	fi
 	for t in $(echo "$go" | tr ',' ' '); do
-		if ! grep -q "^func $t(t \*testing.T)" ./*_test.go 2>/dev/null; then
+		if ! grep -q "^func $t(t \*testing.T)" ./*_test.go ./internal/*/*_test.go 2>/dev/null; then
 			echo "FAIL: $file:$line: bound to $t, which is no test"; fail=1
 		fi
 		echo "$t" >> "$TMP/tests"
@@ -55,7 +55,7 @@ n=$(wc -l < "$TMP/scenarios" | tr -d ' ')
 if [ "${BOUND_SKIP_RUN:-0}" != 1 ] && [ -s "$TMP/tests" ]; then
 	sort -u "$TMP/tests" > "$TMP/uniq"
 	re=$(paste -sd'|' "$TMP/uniq")
-	go test -count=1 -v -run "^($re)\$" . > "$TMP/out" 2>&1 || true
+	go test -count=1 -v -run "^($re)\$" ./... > "$TMP/out" 2>&1 || true
 	while read -r t; do
 		if ! grep -q "^--- PASS: $t " "$TMP/out"; then
 			echo "FAIL: bound test $t did not pass:"; grep -A5 -- "--- FAIL: $t " "$TMP/out" || tail -20 "$TMP/out"; fail=1

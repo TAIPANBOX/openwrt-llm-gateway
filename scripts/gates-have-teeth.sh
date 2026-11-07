@@ -161,8 +161,6 @@ grep -q '"$PROG" prepare' "$TMP/r/$I" && { echo "BAD  the no-prepare plant did n
 expect "red:start_service did not run prepare" "init: prepare is not run" sh -c "$(KT TestInitPreparesBeforeAnythingElse)"
 fresh; perl -i -0pe 's/(\tllmgw_account \|\| \{)/\tsync_firewall\n$1/' "$TMP/r/$I"
 expect "red:out of order" "init: the firewall comes first" sh -c "$(KT TestInitPreparesBeforeAnythingElse)"
-fresh; perl -i -pe 's/^(\tprocd_set_param stderr 1)$/$1\n\tprocd_set_param user llm-gateway/' "$TMP/r/$I"
-expect "red:the daemon is given a user already" "init: the daemon is given a user in this step" sh -c "$(KT TestInitPreparesBeforeAnythingElse)"
 fresh; perl -i -ne 'print unless /^\t\[ "\$rc" = 0 \] \|\| return 1$/' "$TMP/r/$I"
 expect "red:--- FAIL: TestInitRefusalIsOneLineAndStartsNothing" "init: a refusal still starts" sh -c "$(KT TestInitRefusalIsOneLineAndStartsNothing)"
 fresh; perl -i -pe 's/^(\t\[ "\$rc" = 0 \] \|\| return 1)$/\t[ "\$rc" = 0 ] || logger -t llm-gateway "prepare failed"\n$1/' "$TMP/r/$I"
@@ -170,6 +168,104 @@ expect "red:a refusal took 2 log lines" "init: a refusal takes two lines" sh -c 
 fresh; perl -i -ne 'print unless /^\tllmgw_account \|\| \{/' "$TMP/r/$I"
 expect "red:--- FAIL: TestInitWithoutTheAccountStartsNothing" "init: goes on without the account" sh -c "$(KT TestInitWithoutTheAccountStartsNothing)"
 fresh; rm "$TMP/r/$I"; expect nothing "init: no script" sh -c "$(KT TestInitPreparesBeforeAnythingElse)"
+
+# What start_service asks of procd
+H=TestInitScriptHardening
+fresh; expect green "hardening: as written" sh -c "$(KT $H)"
+fresh; sed -i.bak 's/ log procfs ronly requirejail$/ log procfs ronly/' "$TMP/r/$I"
+expect "red:does not ask for" "hardening: no requirejail" sh -c "$(KT $H)"
+fresh; perl -i -ne 'print unless /^\tprocd_set_param user llm-gateway$/' "$TMP/r/$I"
+expect "red:does not ask for \"param user llm-gateway\"" "hardening: no user" sh -c "$(KT $H)"
+fresh; perl -i -ne 'print unless /^\tprocd_set_param no_new_privs 1$/' "$TMP/r/$I"
+expect "red:does not ask for \"param no_new_privs 1\"" "hardening: no no_new_privs" sh -c "$(KT $H)"
+fresh; perl -i -ne 'print unless /^\tprocd_set_param capabilities /' "$TMP/r/$I"
+expect "red:does not ask for \"param capabilities" "hardening: no capabilities file" sh -c "$(KT $H)"
+fresh; sed -i.bak 's/ log procfs ronly requirejail$/ log procfs sysfs ronly requirejail/' "$TMP/r/$I"
+expect "red:does not ask for" "hardening: sysfs in the jail" sh -c "$(KT $H)"
+fresh; perl -i -pe 's/^(\tprocd_set_param no_new_privs 1)$/$1\n\tprocd_set_param seccomp \/etc\/seccomp\/llm-gateway.json/' "$TMP/r/$I"
+expect "red:asks procd for a seccomp profile" "hardening: a procd seccomp profile" sh -c "$(KT $H)"
+fresh; perl -i -pe 's/^(\tprocd_add_jail_mount_rw .*)$/$1\n\tprocd_add_jail_mount "\$cert_dir\/ca.key"/' "$TMP/r/$I"
+expect "red:the jail mounts /etc/llm-gateway/ca.key" "hardening: the CA key in the jail" sh -c "$(KT $H)"
+fresh; perl -i -pe 's/^(\tprocd_add_jail_mount_rw .*)$/$1\n\tprocd_add_jail_mount "\$cert_dir"/' "$TMP/r/$I"
+expect "red:the jail mounts /etc/llm-gateway, which" "hardening: the CA's directory in the jail" sh -c "$(KT $H)"
+fresh; perl -i -pe 's/^(\tprocd_add_jail_mount_rw .*)$/$1\n\tprocd_add_jail_mount \/etc\/config\/dhcp/' "$TMP/r/$I"
+expect "red:the jail mounts /etc/config/dhcp" "hardening: dnsmasq's configuration in the jail" sh -c "$(KT $H)"
+fresh; perl -i -pe 's/^(\tprocd_add_jail_mount_rw .*)$/$1\n\tprocd_add_jail_mount_rw \/var\/run\/llm-gateway/' "$TMP/r/$I"
+expect "red:writable in the jail" "hardening: the snapshot's directory writable" sh -c "$(KT $H)"
+fresh; sed -i.bak 's/^# llm-gateway under procd\.$/# llm-gateway, under procd./' "$TMP/r/$I"
+expect green "hardening: a comment may change" sh -c "$(KT $H)"
+fresh; rm "$TMP/r/$I"; expect nothing "hardening: no script" sh -c "$(KT $H)"
+
+# The capabilities file
+C=TestCapabilitiesFileIsEmpty
+CF=files/etc/capabilities/llm-gateway.json
+fresh; expect green "capabilities: as written" sh -c "$(KT $C)"
+fresh; perl -i -ne 'print unless /"ambient"/' "$TMP/r/$CF"; perl -i -pe 's/("permitted": \[\]),/$1/' "$TMP/r/$CF"
+expect "red:the set ambient is not named" "capabilities: a set left out" sh -c "$(KT $C)"
+fresh; sed -i.bak 's/"bounding": \[\]/"bounding": ["CAP_NET_RAW"]/' "$TMP/r/$CF"
+expect "red:the set bounding grants" "capabilities: one granted" sh -c "$(KT $C)"
+fresh; sed -i.bak 's/ procd-ujail//' "$TMP/r/mkapk.sh"
+expect "red:does not depend on procd-ujail" "capabilities: no procd-ujail in depends" sh -c "$(KT $C)"
+fresh; perl -i -ne 'print unless /files\/etc\/capabilities/' "$TMP/r/mkapk.sh"
+expect red "capabilities: the package does not carry the file" sh -c "$(KT $C)"
+fresh; rm "$TMP/r/$CF"; expect nothing "capabilities: no file" sh -c "$(KT $C)"
+
+# The filter comes first in serve
+F=TestConfineComesFirst
+FG() { echo "cd $REPO && DAEMON_SRC=$TMP/r go test -count=1 -run '^$F\$' ."; }
+fresh; expect green "first: as written" sh -c "$(FG)"
+fresh; perl -i -0pe 's/\tif !confined\(e, lg\) \{\n\t\treturn 1\n\t\}\n(\traw, err := os\.ReadFile\(e\.configPath\)\n\tif err != nil \{\n\t\tlg\.Print\(err\)\n\t\treturn 1\n\t\}\n)/$1\tif !confined(e, lg) {\n\t\treturn 1\n\t}\n/' "$TMP/r/main.go"
+expect "red:serve calls os.ReadFile before its filter is on" "first: the configuration read before the filter" sh -c "$(FG)"
+fresh; perl -i -0pe 's/(but serve was started by hand"\)\n)\t\treturn 1\n/$1/; s/(or serve was started by hand"\)\n)\t\treturn 1\n/$1/' "$TMP/r/main.go"
+expect "red:goes on after a refusal" "first: root noted and let through" sh -c "$(FG)"
+fresh; rm -f "$TMP/r/main.go"; expect nothing "first: no main.go" sh -c "$(FG)"
+
+# The copy, the lists and where the filter goes on
+SB=internal/sandbox
+SG() { echo "cd $REPO/$SB && SANDBOX_SRC=$TMP/r/$SB go test -count=1 -run '^$1\$' ."; }
+fresh; expect green "copy: as written" sh -c "$(SG TestFilterIsRollcallsCopy)"
+fresh; sed -i.bak 's/maxAllowed = 255/maxAllowed = 254/' "$TMP/r/$SB/filter.go"
+expect "red:is no longer the copy it says it is" "copy: the filter changed" sh -c "$(SG TestFilterIsRollcallsCopy)"
+fresh; sed -i.bak '1s/^/\/\/ a line above the package line\n/' "$TMP/r/$SB/filter.go"
+expect green "copy: the header may change" sh -c "$(SG TestFilterIsRollcallsCopy)"
+fresh; rm "$TMP/r/$SB/filter.go"; expect nothing "copy: no filter.go" sh -c "$(SG TestFilterIsRollcallsCopy)"
+fresh; printf 'execve\n' >> "$TMP/r/$SB/seccomp/common.txt"
+expect "red:the list allows execve" "list: execve" sh -c "$(SG TestListNeverAllowsAProgram)"
+fresh; printf 'execveat\n' >> "$TMP/r/$SB/seccomp/amd64.txt"
+expect "red:amd64: the list allows execveat" "list: execveat in a family" sh -c "$(SG TestListNeverAllowsAProgram)"
+fresh; expect green "list: as written" sh -c "$(SG TestListNeverAllowsAProgram)"
+fresh; rm -rf "$TMP/r/$SB/seccomp"; expect nothing "list: no lists" sh -c "$(SG TestListNeverAllowsAProgram)"
+fresh; sed -i.bak '/^splice$/d' "$TMP/r/$SB/seccomp/common.txt"
+expect "red:the list lacks splice" "list: no splice" sh -c "$(SG TestListAllowsTheCopyPaths)"
+fresh; sed -i.bak '/^sendfile64$/d' "$TMP/r/$SB/seccomp/mips.txt"
+expect "red:mipsle: the list lacks sendfile64" "list: no sendfile64 on mips" sh -c "$(SG TestListAllowsTheCopyPaths)"
+fresh; sed -i.bak '/^eventfd2$/d' "$TMP/r/$SB/seccomp/common.txt"
+expect "red:the list lacks eventfd2" "list: no eventfd2" sh -c "$(SG TestListHoldsWhatEveryRunNeeds)"
+fresh; printf 'frobnicate\n' >> "$TMP/r/$SB/seccomp/common.txt"
+expect "red:frobnicate is no system call" "list: a name no architecture has" sh -c "$(SG TestListNamesExistPerFamily)"
+fresh; printf 'newfstatat\n' >> "$TMP/r/$SB/seccomp/mips.txt"
+expect "red:mipsle: newfstatat is no system call" "list: a name mips does not have" sh -c "$(SG TestListNamesExistPerFamily)"
+fresh; rm "$TMP/r/$SB/zsysnum_linux_arm.go"; expect nothing "list: no table" sh -c "$(SG TestListNamesExistPerFamily)"
+fresh; sed -i.bak '1s/.*/\/\/go:build linux \&\& (amd64 || arm64 || arm)/' "$TMP/r/$SB/sandbox_linux.go"
+expect "red:sandbox_linux.go is built under" "list: the filter on an architecture with no run behind it" sh -c "$(SG TestFilterOnlyWhereARealRunStandsBehindIt)"
+fresh; expect green "list: the filter where runs stand behind it" sh -c "$(SG TestFilterOnlyWhereARealRunStandsBehindIt)"
+fresh; rm "$TMP/r/$SB/sandbox_off.go"; expect nothing "list: no sandbox_off.go" sh -c "$(SG TestFilterOnlyWhereARealRunStandsBehindIt)"
+
+# The daemon under its filter: the whole run needs Linux on amd64 or arm64, and CI's seccomp job runs
+# it on both. Here it is the gate's own subject that goes.
+GS="sh $REPO/scripts/gate-seccomp-run.sh"
+case "$(uname -s) $(uname -m)" in
+Linux\ x86_64 | Linux\ aarch64)
+	fresh; expect green "seccomp run: the daemon, and SIGSYS without eventfd2" sh -c "SECCOMP_REPO=$TMP/r SECCOMP_DROP=eventfd2 $GS"
+	fresh; sed -i.bak '/^epoll_pwait$/d' "$TMP/r/$SB/seccomp/common.txt"
+	expect "red:the daemon does not run under its filter" "seccomp run: the list lacks what it needs" sh -c "SECCOMP_REPO=$TMP/r SECCOMP_DROP=eventfd2 $GS"
+	fresh; perl -i -0pe 's/\tif !confined\(e, lg\) \{\n\t\treturn 1\n\t\}\n//' "$TMP/r/main.go"
+	expect "red:the daemon does not run under its filter" "seccomp run: serve puts no filter on" sh -c "SECCOMP_REPO=$TMP/r SECCOMP_DROP=eventfd2 $GS"
+	fresh; rm "$TMP/r/filter_run_test.go"
+	expect nothing "seccomp run: no test" sh -c "SECCOMP_REPO=$TMP/r SECCOMP_DROP=eventfd2 $GS"
+	;;
+*) expect nothing "seccomp run: not this machine" $GS ;;
+esac
 
 # The package's scripts, from mkapk.sh as far as it runs without apk
 U=TestPackageRunsPostUpgrade
@@ -200,7 +296,17 @@ dump() { # post-upgrade's text
 # ADB block, size: 1452, compat: 0, ver: 0
 info:
   name: llm-gateway
-  version: 0.1.0-r3
+  version: 0.1.0-r4
+  depends: # 5 items
+    - ca-bundle
+    - jsonfilter
+    - libc
+    - procd-ujail
+    - ubus
+paths: # 2 items
+  - name: etc/capabilities
+    files: # 1 items
+      - name: llm-gateway.json
 scripts:
   post-install: |
     #!/bin/sh
@@ -230,6 +336,8 @@ dump ""; expect "red:the package has no post-upgrade script" "package scripts: p
 dump "$(echo "$UP" | grep -v 'llm-gateway account')"; expect "red:post-upgrade does not run: /etc/init.d/llm-gateway account" "package scripts: no account" $PS "$TMP/dump.txt"
 dump "$(echo "$UP" | grep -v 'restart')"; expect "red:post-upgrade does not run: /etc/init.d/llm-gateway restart" "package scripts: no restart" $PS "$TMP/dump.txt"
 dump "$(echo "$UP" | sed 's/^    exit 0$/    \/etc\/init.d\/llm-gateway enable/')"; expect "red:post-upgrade enables the service" "package scripts: enables on upgrade" $PS "$TMP/dump.txt"
+dump "$UP"; sed -i.bak '/- procd-ujail/d' "$TMP/dump.txt"; expect "red:the package does not depend on procd-ujail" "package scripts: no procd-ujail" $PS "$TMP/dump.txt"
+dump "$UP"; sed -i.bak '/llm-gateway.json/d' "$TMP/dump.txt"; expect "red:the package has no capabilities file" "package scripts: no capabilities file" $PS "$TMP/dump.txt"
 : > "$TMP/dump.txt"; expect nothing "package scripts: an empty dump" $PS "$TMP/dump.txt"
 rm "$TMP/dump.txt"; expect nothing "package scripts: no dump" $PS "$TMP/dump.txt"
 echo "package: {}" > "$TMP/dump.txt"; expect nothing "package scripts: a dump with no scripts" $PS "$TMP/dump.txt"

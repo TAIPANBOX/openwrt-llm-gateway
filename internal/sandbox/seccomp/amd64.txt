@@ -1,0 +1,5 @@
+# x86_64 only. Go's static runtime sets the TLS base with arch_prctl at start. newfstatat is the
+# 64-bit stat call (os.Stat, os.Lstat). mmap is the runtime's (runtime/sys_linux_amd64.s).
+arch_prctl
+mmap
+newfstatat

@@ -247,8 +247,11 @@ func (g *Gateway) forward(w http.ResponseWriter, r *http.Request, b *Backend, bo
 			out.URL.Path = b.URL.Path + strings.TrimPrefix(r.URL.Path, "/v1")
 			out.URL.RawPath, out.URL.RawQuery = "", ""
 			out.Host = b.URL.Host
+			// Upgrade and Connection too: the proxy puts them back for a client that asks to switch
+			// protocol, and no route here does. A backend that switched would make the proxy copy
+			// between two sockets by itself, which is what the seccomp list allows splice for.
 			for _, h := range []string{"Authorization", "Origin", "Referer", "Cookie", "Forwarded",
-				"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-Ip"} {
+				"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-Ip", "Upgrade", "Connection"} {
 				out.Header.Del(h)
 			}
 			if b.key != "" {

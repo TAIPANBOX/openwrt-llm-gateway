@@ -1,0 +1,16 @@
+# MIPS (o32) only, as rollcall has it, with sendfile64, which syscall.Sendfile makes on 32-bit. The
+# filter is off on mips: no real run stands behind this list yet, and it is here for the day one does
+# (sandbox_off.go). brk, open, mmap, futex_time64, and the o32 stat calls stat64, lstat64, fstat64 and
+# fstatat64. o32 has no newfstatat and no 32-bit uid calls.
+_llseek
+brk
+fcntl64
+fstat64
+fstatat64
+futex_time64
+lstat64
+mmap
+mmap2
+open
+sendfile64
+stat64
