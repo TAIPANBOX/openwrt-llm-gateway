@@ -916,6 +916,9 @@ func TestPortBelow1024IsRefused(t *testing.T) {
 			if code := run([]string{"check"}, io.Discard, &errOut, e); code == 0 || !strings.Contains(errOut.String(), "1024") {
 				t.Fatalf("check: %d %q", code, errOut.String())
 			}
+			if log := serveRefuses(t, e); !strings.Contains(log, "1024") {
+				t.Fatalf("the daemon's line: %q", log)
+			}
 		})
 	}
 	for _, port := range []string{"0", "-1", "65536", "https"} {
@@ -1026,6 +1029,64 @@ func TestServeSaysWhenTheCertificateHasEnded(t *testing.T) {
 	if !strings.Contains(log.String(), "the certificate ended") {
 		t.Fatalf("not said: %q", log.String())
 	}
+}
+
+func TestPrepareStopsWhenAFileCannotGetItsOwner(t *testing.T) {
+	for _, target := range []string{"run", "tls.key", "journal", "backend.keys", "snapshot.json"} {
+		t.Run(target, func(t *testing.T) {
+			e, o, _ := prepareEnv(t, "")
+			e.chown = func(path string, uid, gid int) error {
+				name := filepath.Base(path)
+				if m := tempName.FindStringSubmatch(name); m != nil {
+					name = m[1]
+				}
+				if name == target {
+					return errors.New("chown refused")
+				}
+				return o.chown(path, uid, gid)
+			}
+			if out := prepareRefuses(t, e); !strings.Contains(out, "chown refused") {
+				t.Fatalf("the refusal does not say why: %q", out)
+			}
+			if _, err := os.Stat(snapshotPath(e)); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatal("a snapshot stands there although a file has the wrong owner")
+			}
+			ents, err := os.ReadDir(e.runDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, ent := range ents {
+				if strings.HasPrefix(ent.Name(), ".") {
+					t.Fatalf("a temporary file was left: %s", ent.Name())
+				}
+			}
+		})
+	}
+}
+
+func TestAConfigurationThatCannotBeReadStopsBothSteps(t *testing.T) {
+	t.Run("gone", func(t *testing.T) {
+		e, _, _ := prepareEnv(t, aBackendAndAClient)
+		runPrepare(t, e)
+		if err := os.Remove(e.configPath); err != nil {
+			t.Fatal(err)
+		}
+		if out := prepareRefuses(t, e); !strings.Contains(out, e.configPath) {
+			t.Fatalf("prepare: %q", out)
+		}
+		if log := serveRefuses(t, e); !strings.Contains(log, e.configPath) {
+			t.Fatalf("serve: %q", log)
+		}
+		if code := run([]string{"renew-due"}, io.Discard, io.Discard, e); code != 1 {
+			t.Fatalf("renew-due exited %d, want 1", code)
+		}
+	})
+	t.Run("invalid", func(t *testing.T) {
+		e, _, _ := prepareEnv(t, "config client 'bad'\n\toption key_hash 'not a hash'\n\tlist model '*'\n")
+		if out := prepareRefuses(t, e); !strings.Contains(out, "key_hash") {
+			t.Fatalf("prepare: %q", out)
+		}
+	})
 }
 
 func TestPrepareOnADisabledGatewayMakesNoCertificates(t *testing.T) {

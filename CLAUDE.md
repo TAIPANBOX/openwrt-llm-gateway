@@ -117,9 +117,11 @@ Language: Go, stdlib only. Testing tier: T3 (authorization decisions whose failu
     and given their owner before they take their name. A daemon that finds either open to more
     than that, or a link in their place, refuses to start. Only `journal/` is the account's.
     (test: `TestPrepareWritesTheSnapshotAndTheKeys`, `TestPrepareOwnsTheSnapshotDirectory`,
-    `TestServeRefusesASnapshotOthersCanChange`; vlab: `snapshot_directory_is_roots`, tried as the
-    account; mutants: snapshot-world-readable, snapshot-owned-by-the-account, snapshot-directory-open,
-    snapshot-directory-owned-by-the-account, snapshot-mode-not-read, link-in-the-directorys-place-followed)
+    `TestServeRefusesASnapshotOthersCanChange`, `TestPrepareStopsWhenAFileCannotGetItsOwner`; vlab:
+    `snapshot_directory_is_roots`, tried as the account; mutants: snapshot-world-readable,
+    snapshot-owned-by-the-account, snapshot-directory-open, snapshot-directory-owned-by-the-account,
+    snapshot-mode-not-read, link-in-the-directorys-place-followed, wrong-owner-still-takes-the-name,
+    leaf-key-stays-root-only)
 17. **An upgrade takes effect, and leaves the start at boot as the owner set it.** apk runs
     post-upgrade, never post-install, when it replaces a version, so both are packed, on both ways
     to the package. post-upgrade makes the account, restarts a gateway that runs or is meant to,
@@ -130,7 +132,7 @@ Language: Go, stdlib only. Testing tier: T3 (authorization decisions whose failu
     `scripts/gate-package-scripts.sh` on every package `mkapk.sh` builds, teeth in
     `scripts/gates-have-teeth.sh`; vlab: `upgrade_ran_post_upgrade`, `upgrade_made_the_account`,
     `upgrade_restarted_the_daemon`, `upgrade_kept_the_configuration`, `gateway_answers_after_the_upgrade`,
-    `reboot_brings_it_back`)
+    `reboot_brings_it_back`, `fresh_install_makes_the_account`)
 18. **No port below 1024, refused in one line before anything is opened.** `prepare` runs before the
     firewall and dnsmasq are touched, and the init script hands its output to the system log.
     (test: `TestPortBelow1024IsRefused`, `TestInitRefusalIsOneLineAndStartsNothing`; vlab:

@@ -174,6 +174,15 @@ each of four runs and the signed feed installed with OpenWrt's own apk, 5 of 5 c
 GL.iNet Flint 2, Hermes paired itself and answered through the gateway, and HTTPS from a laptop
 on the LAN answered 200 with a key, 401 without one ([flint2-hermes-2026-11-01.md](evidence/flint2-hermes-2026-11-01.md)).
 
+`@measured docs/evidence/ 2026-11-07`, for the step in "Root and the daemon": 36 new tests red first
+against 96620b5, 60 of 60 mutants caught on forge and in CI, 80 of 80 gate teeth; on an OpenWrt 25.12.5
+VM, the image vlab uses, with `scripts/vlab-upgrade.sh`, in two runs from fresh images: apk replaced a
+running r2 by CI's r3 and ran post-upgrade, the CA's fingerprint and the configuration stayed, a
+device with the CA saved before the upgrade got 200 with its old key and 401 without, as the account
+the snapshot could be read and not changed, port 443 took one line in the log, a reboot came back by
+itself, and with the clock moved into the renewal window the ntp hook renewed the certificate under
+the same CA.
+
 ## Commands
 
 `serve`, `client add|remove|list`, `cert`, `check` (also shows when the certificate ends), `version`,

@@ -1,0 +1,71 @@
+Mutants, 2026-11-07: python3 scripts/mutate.py on forge, go1.27.3 linux/amd64. Each line names the
+mutant and the test that caught it. The same script runs in CI on every pull request.
+
+The first CI run left 4 of these alive that forge had caught: snapshot-version-not-checked,
+snapshot-unknown-fields-pass, snapshot-trailing-data-passes and snapshot-hosts-not-checked. The test
+ran the daemon with the real net.Listen and took exit 1 as the refusal; on a runner without the test's
+address the bind fails with exit 1 as well, so a daemon that took a bad snapshot passed for one that
+refused it. Forge has ip_nonlocal_bind=1, so there the bind succeeded and the daemon stayed up. The
+test now stands in for the bind and requires that nothing was bound.
+
+caught    empty-key-matches-first-client     by TestRequestWithoutKeyIsRefusedBeforeAnyBackend
+caught    any-key-matches                    by TestWrongKeyIsRefused
+caught    loopback-is-trusted                by TestLoopbackRequestStillNeedsAKey
+caught    host-not-checked                   by TestForeignHostIsRefused
+caught    origin-not-checked                 by TestUnlistedOriginIsRefused
+caught    preflight-allows-any-origin        by TestUnlistedOriginIsRefused
+caught    backend-cors-passes-through        by TestNoResponseCarriesAWildcardOrigin
+caught    model-not-checked                  by TestClientReachesOnlyItsModels
+caught    model-list-unfiltered              by TestModelListShowsOnlyTheClientsModels
+caught    star-not-honoured                  by TestModelListShowsOnlyTheClientsModels
+caught    dial-not-checked                   by TestBackendNameResolvingOutsideIsRefusedAtDial
+caught    load-not-checked                   by TestPublicBackendAddressIsRefusedAtLoad
+caught    public-counts-as-house             by TestPublicBackendAddressIsRefusedAtLoad, TestBackendNameResolvingOutsideIsRefusedAtDial
+caught    wildcard-zone-address-bound        by TestListensOnlyOnNamedZoneAddressesAndLoopback
+caught    public-zone-address-bound          by TestOpenWrtZonesReadTheFirewallAndNetifd
+caught    wan-zone-accepted                  by TestListensOnlyOnNamedZoneAddressesAndLoopback
+caught    journal-keeps-the-offered-key      by TestJournalRecordsARefusalWithoutTheKey
+caught    client-key-forwarded-upstream      by TestUpstreamKeyReplacesTheClientsKey
+caught    stream-buffered                    by TestStreamingPassesThroughAndIsRecorded
+caught    ca-not-name-constrained            by TestHouseCACannotVouchForOtherNames
+caught    concurrency-not-held               by TestClientConcurrencyIsHeld
+caught    rate-not-held                      by TestClientRateIsHeldPerMinute
+caught    key-stored-in-clear                by TestClientAddShowsTheKeyOnceAndStoresOnlyItsHash
+caught    models-zone-takes-a-zoned-network  by TestModelsZoneRefusesANetworkThatIsAlreadyZoned
+caught    models-zone-forwards-to-wan        by TestModelsZoneIsIsolatedByConstruction
+caught    lan-port-plain-http                by TestServeBindsOnlyTheZoneAddressesAndLoopback
+caught    daemon-creates-ca                  by TestDaemonLeavesTheCAAlone, TestServeNeverExecs
+caught    daemon-renews-the-leaf             by TestDaemonDoesNotRepairCertificates, TestServeNeverExecs
+caught    domain-read-failure-reads-as-lan   by TestPrepareKeepsTheCA
+caught    half-read-file-reads-as-short      by TestPrepareKeepsTheCA
+caught    no-domain-reads-as-lan             by TestPrepareKeepsTheCA
+caught    damaged-ca-replaced                by TestPrepareRefusesADamagedCA
+caught    lone-ca-key-replaced               by TestPrepareRefusesADamagedCA
+caught    new-ca-goes-unsaid                 by TestPrepareSaysWhenItMakesACA
+caught    ca-key-given-to-the-group          by TestPrepareGivesOnlyTheLeafKeyToTheGroup
+caught    prepare-does-not-lock              by TestPrepareWaitsForAnotherPrepare
+caught    no-config-hash-check               by TestServeRefusesAStaleSnapshot
+caught    missing-snapshot-reads-as-loopback by TestServeRefusesAMissingSnapshot
+caught    snapshot-version-not-checked       by TestServeRefusesADamagedSnapshot
+caught    snapshot-unknown-fields-pass       by TestServeRefusesADamagedSnapshot
+caught    snapshot-trailing-data-passes      by TestServeRefusesADamagedSnapshot
+caught    snapshot-hosts-not-checked         by TestServeRefusesADamagedSnapshot
+caught    snapshot-listen-not-checked        by TestServeRefusesASnapshotThatListensOutside
+caught    snapshot-public-address-listened-on by TestServeRefusesASnapshotThatListensOutside
+caught    plain-port-allowed-on-the-lan      by TestServeRefusesASnapshotThatListensOutside
+caught    daemon-calls-netifd                by TestServeNeverExecs
+caught    backend-key-read-from-its-file     by TestBackendKeysFileIsReadWithCare
+caught    snapshot-world-readable            by TestPrepareWritesTheSnapshotAndTheKeys
+caught    snapshot-owned-by-the-account      by TestPrepareWritesTheSnapshotAndTheKeys
+caught    snapshot-directory-open            by TestPrepareOwnsTheSnapshotDirectory
+caught    snapshot-directory-owned-by-the-account by TestPrepareOwnsTheSnapshotDirectory
+caught    wrong-owner-still-takes-the-name   by TestPrepareStopsWhenAFileCannotGetItsOwner
+caught    leaf-key-stays-root-only           by TestPrepareGivesOnlyTheLeafKeyToTheGroup
+caught    snapshot-mode-not-read             by TestServeRefusesASnapshotOthersCanChange
+caught    link-in-the-directorys-place-followed by TestPrepareOwnsTheSnapshotDirectory
+caught    journal-under-tmp                  by TestJournalLivesUnderVarRun
+caught    journal-anywhere                   by TestJournalLivesUnderVarRun
+caught    port-below-1024-accepted           by TestPortBelow1024IsRefused
+caught    port-1024-refused                  by TestPortBelow1024IsRefused
+caught    renewal-window-ignored             by TestRenewDueSaysWhenTheCertificateNearsItsEnd
+mutants: 60 of 60 caught

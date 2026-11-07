@@ -29,7 +29,7 @@ Feature: root prepares, and the daemon works from what root left
     Then it listens on what the snapshot names
     And it calls no program, no ubus, and reads neither the firewall's nor dnsmasq's configuration
 
-  # bound to: TestServeRefusesAMissingSnapshot, TestServeRefusesADamagedSnapshot, TestServeRefusesAStaleSnapshot
+  # bound to: TestServeRefusesAMissingSnapshot, TestServeRefusesADamagedSnapshot, TestServeRefusesAStaleSnapshot, TestAConfigurationThatCannotBeReadStopsBothSteps
   Scenario: a snapshot that is missing, damaged or made from another configuration stops the start
     Given a snapshot that is gone, cut at any byte, of another version, or from before a configuration change
     When the daemon starts
@@ -41,12 +41,13 @@ Feature: root prepares, and the daemon works from what root left
     When the daemon starts
     Then it binds nothing
 
-  # bound to: TestPrepareOwnsTheSnapshotDirectory, TestServeRefusesASnapshotOthersCanChange
+  # bound to: TestPrepareOwnsTheSnapshotDirectory, TestServeRefusesASnapshotOthersCanChange, TestPrepareStopsWhenAFileCannotGetItsOwner
   # bound to vlab: snapshot_directory_is_roots
   Scenario: a daemon without root cannot change what it listens on
     When the root step has run
     Then the snapshot's directory is root's, mode 0750, and its group is the account's
     And the snapshot and the keys are root's, mode 0640, and that group's
+    And a file that cannot be given its owner stops the root step, and leaves no snapshot
     And a daemon finding either open to more than that refuses to start
 
   # bound to: TestPrepareRefusesWithoutTheAccount, TestInitWithoutTheAccountStartsNothing
@@ -127,6 +128,14 @@ Feature: an upgrade takes effect, and keeps the devices trusted
     Given a router with a CA and a client key from the package before this one, on a domain that is not "lan"
     When apk replaces the package
     Then the CA's fingerprint is the same, and the same key is answered over HTTPS under the same CA
+
+  # bound to: TestPackageRunsPostUpgrade
+  # bound to vlab: fresh_install_makes_the_account, removal_takes_the_keys_copy_and_keeps_the_account
+  Scenario: a fresh install makes the account, and removing the package leaves it
+    Given a router that never had the account
+    When the package is installed, the gateway enabled, and the package later removed
+    Then post-install makes the account and the gateway starts
+    And removal takes the copy of the backends' keys from RAM and leaves the account
 
   # bound to vlab: reboot_brings_it_back
   Scenario: a reboot after the upgrade comes up by itself

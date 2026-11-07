@@ -13,7 +13,7 @@
 # In vlab on forge by default (e2e/feed.json), the lab taken down afterwards. ROUTER=<ssh command>
 # and HTTPS_AT=<host:port> run the same checks on a router that is already up.
 set -u
-CHECKS='upgrade_ran_post_upgrade upgrade_made_the_account upgrade_restarted_the_daemon upgrade_kept_the_ca upgrade_kept_the_configuration prepare_left_the_snapshot snapshot_directory_is_roots gateway_answers_after_the_upgrade journal_moved_to_var_run low_port_is_one_line reboot_brings_it_back ntp_hook_renews_the_certificate'
+CHECKS='upgrade_ran_post_upgrade upgrade_made_the_account upgrade_restarted_the_daemon upgrade_kept_the_ca upgrade_kept_the_configuration prepare_left_the_snapshot snapshot_directory_is_roots gateway_answers_after_the_upgrade journal_moved_to_var_run low_port_is_one_line reboot_brings_it_back ntp_hook_renews_the_certificate removal_takes_the_keys_copy_and_keeps_the_account fresh_install_makes_the_account'
 if [ "${1:-}" = "--selftest" ]; then for c in $CHECKS; do echo "$c"; done; exit 0; fi
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -88,6 +88,10 @@ say "  after the reboot, the same device, the same key: $(code "$KEY")"
 say "--- ntp: the certificate nears its end on a gateway nobody restarted"
 part ntp | tee -a "$out"
 say "  after the renewal, the same device, the same key: $(code "$KEY")"
+
+say "--- removal, then a fresh install"
+part removal | tee -a "$out"
+say "  after the fresh install, the same device, the same key: $(code "$KEY")"
 
 passed=0; failed=0
 for c in $CHECKS; do

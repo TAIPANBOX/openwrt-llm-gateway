@@ -1,0 +1,31 @@
+Local gates for prepare, 2026-11-07, on forge (the Mac only edited and ran one quick test).
+The tree: this branch with its last tests, before this file was written.
+
+== go version go1.27.3 linux/amd64, Linux 6.12.107+deb13-amd64 x86_64, 2026-11-07T12:37:25Z
+== gofmt: []
+== go vet
+clean
+== build arm64
+7536800 bytes
+vet clean
+== build arm
+7995552 bytes
+vet clean
+== build amd64
+8114336 bytes
+vet clean
+== build mipsle
+9044159 bytes
+vet clean
+== go test -race
+ok  	github.com/TAIPANBOX/openwrt-llm-gateway	3.838s	coverage: 88.2% of statements
+total:								(statements)		88.2%
+== tests: 75
+== second run
+ok  	github.com/TAIPANBOX/openwrt-llm-gateway	2.318s
+== gate-scenarios-bound
+OK: 56 scenarios bound; 61 bound tests ran and passed
+== gate-no-wildcard
+OK: no wildcard listen address or CORS origin in 11 source files
+== gates-have-teeth
+teeth: 80 ok, 0 bad

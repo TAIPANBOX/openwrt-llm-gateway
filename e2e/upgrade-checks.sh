@@ -8,6 +8,7 @@
 #   lowport   port 443 in the configuration
 #   afterboot what a reboot brings back
 #   ntp       the certificate nears its end on a gateway nobody restarted
+#   removal   the package removed, then installed on a router that never had the account
 U=/root/upg
 J=/var/run/llm-gateway
 INIT=/etc/init.d/llm-gateway
@@ -22,7 +23,7 @@ wait_for() { n=$1; shift; while [ "$n" -gt 0 ]; do "$@" >/dev/null 2>&1 && retur
 listening() { netstat -ltn | grep -q ":$1 "; }
 
 part_before() {
-	apk add --allow-untrusted "$U/old.apk" | tail -2
+	apk add --no-network --allow-untrusted "$U/old.apk" | tail -2
 	uci set dhcp.@dnsmasq[0].domain='home.arpa'
 	uci set dhcp.@dnsmasq[0].local='/home.arpa/'
 	uci commit dhcp
@@ -52,7 +53,7 @@ part_before() {
 }
 
 part_upgrade() {
-	apk add --allow-untrusted "$U/new.apk" > "$U/apk.out" 2>&1
+	apk add --no-network --allow-untrusted "$U/new.apk" > "$U/apk.out" 2>&1
 	rc=$?
 	sed 's/^/apk: /' "$U/apk.out"
 	wait_for 40 listening 8760
@@ -154,6 +155,23 @@ part_ntp() {
 	date -u -s "$real" >/dev/null
 	$INIT restart
 	wait_for 40 listening 8760
+}
+
+part_removal() {
+	apk del --no-network llm-gateway 2>&1 | tail -2
+	echo "removed: $J $([ -e $J ] && echo stays || echo gone); account $(grep -c '^llm-gateway:' /etc/passwd); rules $(uci -q show firewall | grep -c llm_gateway)"
+	r=1; [ ! -e $J ] && grep -q '^llm-gateway:' /etc/passwd && [ "$(uci -q show firewall | grep -c llm_gateway)" = 0 ] && r=0
+	res removal_takes_the_keys_copy_and_keeps_the_account $r
+	# A router that never had the account: only post-install is there to make it.
+	sed -i '/^llm-gateway:/d' /etc/passwd /etc/shadow /etc/group
+	apk add --no-network --allow-untrusted "$U/new.apk" 2>&1 | tail -3
+	uci set llm-gateway.main.enabled='1'
+	uci commit llm-gateway
+	$INIT restart
+	wait_for 40 listening 8760
+	echo "installed: account $(grep '^llm-gateway:' /etc/passwd); pid $(pidof llm-gateway); $(owner $J); enabled at boot: $($INIT enabled && echo yes || echo no)"
+	r=1; grep -q '^llm-gateway:' /etc/passwd && [ -n "$(pidof llm-gateway)" ] && $INIT enabled && [ "$(fingerprint)" = "$(cat "$U/ca.fp")" ] && r=0
+	res fresh_install_makes_the_account $r
 }
 
 part_"${1:?part}"

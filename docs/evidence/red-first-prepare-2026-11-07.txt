@@ -8,61 +8,65 @@ There is no prepare command on that tree, so most of these stop at it: `prepare 
 guard does on its own is shown by its mutant, in mutants-2026-11-07.txt.
 
 FAIL  TestPrepareWritesTheSnapshotAndTheKeys
-      prepare_test.go:227: prepare exited 2: usage:
+      prepare_test.go:228: prepare exited 2: usage:
 FAIL  TestPrepareOwnsTheSnapshotDirectory
-      prepare_test.go:262: prepare exited 2: usage:
+      prepare_test.go:263: prepare exited 2: usage:
 FAIL  TestPrepareGivesOnlyTheLeafKeyToTheGroup
-      prepare_test.go:301: prepare exited 2: usage:
+      prepare_test.go:302: prepare exited 2: usage:
 FAIL  TestPrepareTwiceChangesNothing
-      prepare_test.go:324: prepare exited 2: usage:
+      prepare_test.go:325: prepare exited 2: usage:
 FAIL  TestPrepareKeepsTheCA
-      prepare_test.go:348: prepare exited 2: usage:
+      prepare_test.go:349: prepare exited 2: usage:
 FAIL  TestPrepareRefusesADamagedCA
-      prepare_test.go:431: prepare exited 2: usage:
+      prepare_test.go:432: prepare exited 2: usage:
 FAIL  TestPrepareSaysWhenItMakesACA
-      prepare_test.go:451: prepare exited 2: usage:
+      prepare_test.go:452: prepare exited 2: usage:
 FAIL  TestPrepareRefusesWithoutTheAccount
-      prepare_test.go:474: prepare exited 2, want 1: usage:
+      prepare_test.go:475: prepare exited 2, want 1: usage:
 FAIL  TestPrepareRefusesWhatServeWouldNotBind
-      prepare_test.go:485: prepare exited 2, want 1: usage:
+      prepare_test.go:486: prepare exited 2, want 1: usage:
 FAIL  TestPrepareWithNoAddressYetLeavesLoopbackAndSaysSo
-      prepare_test.go:499: prepare exited 2: usage:
+      prepare_test.go:500: prepare exited 2: usage:
 FAIL  TestPrepareDoesNotWaitForDNS
-      prepare_test.go:512: prepare exited 2: usage:
+      prepare_test.go:513: prepare exited 2: usage:
 FAIL  TestPrepareWaitsForAnotherPrepare
-      prepare_test.go:520: prepare exited 2: usage:
+      prepare_test.go:521: prepare exited 2: usage:
 FAIL  TestDaemonLeavesTheCAAlone
-      prepare_test.go:557: prepare exited 2: usage:
+      prepare_test.go:558: prepare exited 2: usage:
 FAIL  TestDaemonDoesNotRepairCertificates
-      prepare_test.go:577: prepare exited 2: usage:
+      prepare_test.go:578: prepare exited 2: usage:
 FAIL  TestDaemonAsksTheRouterNothing
-      prepare_test.go:599: prepare exited 2: usage:
+      prepare_test.go:600: prepare exited 2: usage:
 FAIL  TestServeRefusesAMissingSnapshot
-      prepare_test.go:631: prepare exited 2: usage:
+      prepare_test.go:632: prepare exited 2: usage:
 FAIL  TestServeRefusesADamagedSnapshot
-      prepare_test.go:642: prepare exited 2: usage:
+      prepare_test.go:643: prepare exited 2: usage:
 FAIL  TestServeRefusesAStaleSnapshot
-      prepare_test.go:690: prepare exited 2: usage:
+      prepare_test.go:679: prepare exited 2: usage:
 FAIL  TestServeRefusesASnapshotThatListensOutside
-      prepare_test.go:707: prepare exited 2: usage:
+      prepare_test.go:696: prepare exited 2: usage:
 FAIL  TestServeRefusesASnapshotOthersCanChange
-      prepare_test.go:748: prepare exited 2: usage:
+      prepare_test.go:737: prepare exited 2: usage:
 FAIL  TestBackendKeyReachesTheDaemonThroughPrepare
-      prepare_test.go:789: prepare exited 2: usage:
+      prepare_test.go:778: prepare exited 2: usage:
 FAIL  TestBackendKeysFileIsReadWithCare
-      prepare_test.go:837: prepare exited 2: usage:
+      prepare_test.go:826: prepare exited 2: usage:
 FAIL  TestLANAddressChangeReachesTheDaemonThroughPrepare
-      prepare_test.go:877: prepare exited 2: usage:
+      prepare_test.go:866: prepare exited 2: usage:
 FAIL  TestPortBelow1024IsRefused
-      prepare_test.go:918: prepare exited 2, want 1: usage:
+      prepare_test.go:907: prepare exited 2, want 1: usage:
 FAIL  TestJournalLivesUnderVarRun
-      prepare_test.go:946: the journal is at /tmp/llm-gateway/journal.log
+      prepare_test.go:938: the journal is at /tmp/llm-gateway/journal.log
 FAIL  TestRenewDueSaysWhenTheCertificateNearsItsEnd
-      prepare_test.go:984: no certificate yet: exited 2, want 0
+      prepare_test.go:976: no certificate yet: exited 2, want 0
 FAIL  TestServeSaysWhenTheCertificateHasEnded
-      prepare_test.go:1028: prepare exited 2: usage:
+      prepare_test.go:1020: prepare exited 2: usage:
+FAIL  TestPrepareStopsWhenAFileCannotGetItsOwner
+      prepare_test.go:1048: prepare exited 2, want 1: usage:
+FAIL  TestAConfigurationThatCannotBeReadStopsBothSteps
+      prepare_test.go:1070: prepare exited 2: usage:
 FAIL  TestPrepareOnADisabledGatewayMakesNoCertificates
-      prepare_test.go:1048: prepare exited 2: usage:
+      prepare_test.go:1098: prepare exited 2: usage:
 FAIL  TestServeNeverExecs
       gates_test.go:136: the daemon reaches LoadConfig, which reads the backends' key files: in serve (serve)
 FAIL  TestInitPreparesBeforeAnythingElse
@@ -78,4 +82,4 @@ FAIL  TestNtpHookRenewsOnlyWhenTheClockCanBeBelieved
 FAIL  TestServeBindsOnlyTheZoneAddressesAndLoopback
       cli_test.go:116: prepare exited 2
 
-35 of 35 red (34 new, 1 changed). The other 38 tests of the tree: all green
+37 of 37 red (36 new, 1 changed). The other 38 tests of the tree: all green
