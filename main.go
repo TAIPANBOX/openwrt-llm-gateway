@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/pem"
@@ -9,10 +10,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
-	"net/netip"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -30,6 +31,7 @@ var version = "dev"
 type env struct {
 	configPath string
 	dhcpPath   string
+	runDir     string // where prepare leaves what the daemon works from
 	uci        func(stdin string, args ...string) ([]byte, error)
 	resolver   Resolver
 	zones      ZoneSource
@@ -38,12 +40,30 @@ type env struct {
 	// firewallPath and reloadFirewall serve models-zone.
 	firewallPath   string
 	reloadFirewall func() error
+	// account and chown serve prepare, which gives files to the account the daemon will run as.
+	account func() (serviceAccount, error)
+	chown   func(path string, uid, gid int) error
+}
+
+// daemonEnv is everything serve may touch. It is its own type so that the daemon cannot reach the
+// firewall, netifd, dnsmasq or uci even by mistake: those are prepare's, and they need root.
+type daemonEnv struct {
+	configPath string
+	runDir     string
+	resolver   Resolver
+	now        func() time.Time
+	listen     func(network, addr string) (net.Listener, error)
+}
+
+func (e *env) daemon() *daemonEnv {
+	return &daemonEnv{configPath: e.configPath, runDir: e.runDir, resolver: e.resolver, now: e.now, listen: e.listen}
 }
 
 func defaultEnv() *env {
 	return &env{
 		configPath: "/etc/config/llm-gateway",
 		dhcpPath:   "/etc/config/dhcp",
+		runDir:     runDir,
 		uci: func(stdin string, args ...string) ([]byte, error) {
 			cmd := exec.Command("uci", args...)
 			cmd.Stdin = strings.NewReader(stdin)
@@ -57,12 +77,16 @@ func defaultEnv() *env {
 		reloadFirewall: func() error {
 			return exec.Command("/etc/init.d/firewall", "reload").Run()
 		},
+		account: lookupAccount,
+		// Lchown, never Chown: what stands in the journal's directory is not to be followed.
+		chown: os.Lchown,
 	}
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, defaultEnv())) }
 
 const usageText = `usage:
+  llm-gateway prepare
   llm-gateway serve
   llm-gateway client add NAME -model M [-model M ...] [-origin URL ...] [-rate N] [-concurrent N]
   llm-gateway client remove NAME
@@ -71,6 +95,7 @@ const usageText = `usage:
   llm-gateway addresses
   llm-gateway cert
   llm-gateway check
+  llm-gateway renew-due
   llm-gateway version
 `
 
@@ -80,10 +105,12 @@ func run(args []string, stdout, stderr io.Writer, e *env) int {
 		return 2
 	}
 	switch args[0] {
+	case "prepare":
+		return prepare(stderr, e)
 	case "serve":
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
-		return serve(ctx, e, stderr)
+		return serve(ctx, e.daemon(), stderr)
 	case "client":
 		if len(args) < 2 {
 			break
@@ -124,7 +151,12 @@ func run(args []string, stdout, stderr io.Writer, e *env) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "ok: %d backend(s), %d client(s), zones %s\n", len(cfg.Backends), len(cfg.Clients), strings.Join(cfg.Zones, " "))
+		if leaf, err := readCert(filepath.Join(cfg.CertDir, leafCertFile)); err == nil {
+			fmt.Fprintf(stdout, "certificate until %s\n", leaf.NotAfter.Format(time.DateOnly))
+		}
 		return 0
+	case "renew-due":
+		return renewDue(stderr, e)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return 0
@@ -362,6 +394,26 @@ func certCmd(stdout, stderr io.Writer, e *env) int {
 	return 0
 }
 
+// renewDue exits 0 when the gateway's certificate should be renewed, for the ntp hotplug script:
+// only prepare renews it, and prepare runs when the service starts, so a router whose gateway has
+// run for a year needs something to ask.
+func renewDue(stderr io.Writer, e *env) int {
+	secs, err := readSections(e.configPath)
+	if err != nil {
+		fmt.Fprintln(stderr, "llm-gateway:", err)
+		return 1
+	}
+	cfg := gatewaySettings(secs)
+	if !cfg.Enabled {
+		return 1
+	}
+	leaf, err := readCert(filepath.Join(cfg.CertDir, leafCertFile))
+	if err == nil && leafCurrent(leaf, e.now()) {
+		return 1
+	}
+	return 0
+}
+
 func caFingerprint(dir string) string {
 	raw, err := os.ReadFile(filepath.Join(dir, caCertFile))
 	if err != nil {
@@ -380,7 +432,13 @@ func readSections(path string) ([]uciSection, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return parseUCI(bufio.NewScanner(f)), nil
+	sc := bufio.NewScanner(f)
+	secs := parseUCI(sc)
+	// A read that fails halfway is a failed read, not a shorter file.
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return secs, nil
 }
 
 // gatewaySettings reads the gateway section without validating backends, for commands that
@@ -408,23 +466,42 @@ func gatewaySettings(secs []uciSection) *Config {
 	return cfg
 }
 
-func readDomain(dhcpPath string) string {
+// dnsDomain is the domain dnsmasq serves, "" when the file or the option is not there. An error
+// means the file is there and could not be read, so the domain is unknown.
+func dnsDomain(dhcpPath string) (string, error) {
 	secs, err := readSections(dhcpPath)
-	if err == nil {
-		for _, s := range secs {
-			if s.Type == "dnsmasq" && s.Options["domain"] != "" {
-				return s.Options["domain"]
-			}
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	for _, s := range secs {
+		if s.Type == "dnsmasq" && s.Options["domain"] != "" {
+			return s.Options["domain"], nil
 		}
+	}
+	return "", nil
+}
+
+// readDomain is for showing a URL to the owner. Nothing that lasts is built on it: see houseName.
+func readDomain(dhcpPath string) string {
+	if d, err := dnsDomain(dhcpPath); err == nil && d != "" {
+		return d
 	}
 	return "lan"
 }
 
-// serve runs until ctx ends. It binds only what ListenAddrs returns: TLS on the zone addresses,
-// plain HTTP on loopback.
-func serve(ctx context.Context, e *env, logw io.Writer) int {
+// serve runs until ctx ends. It binds only what the snapshot names, TLS on the zone addresses and
+// plain HTTP on loopback, and works only from what prepare left (invariant 15).
+func serve(ctx context.Context, e *daemonEnv, logw io.Writer) int {
 	lg := log.New(logw, "llm-gateway: ", 0)
-	cfg, err := LoadConfig(e.configPath, e.resolver)
+	raw, err := os.ReadFile(e.configPath)
+	if err != nil {
+		lg.Print(err)
+		return 1
+	}
+	cfg, err := ParseConfig(bytes.NewReader(raw), e.resolver)
 	if err != nil {
 		lg.Print(err)
 		return 1
@@ -433,33 +510,29 @@ func serve(ctx context.Context, e *env, logw io.Writer) int {
 		lg.Print("disabled; set llm-gateway.main.enabled=1")
 		return 0
 	}
-	addrs, lerr := ListenAddrs(cfg.Zones, e.zones, cfg.Port, cfg.LoopbackPort)
-	if addrs == nil {
-		lg.Print(lerr)
-		return 1
-	}
-	if lerr != nil {
-		lg.Print(lerr)
-	}
-	name := cfg.Name + "." + readDomain(e.dhcpPath)
-	hosts := []string{name, "localhost"}
-	var ips []netip.Addr
-	for _, a := range addrs {
-		ap := netip.MustParseAddrPort(a)
-		ips = append(ips, ap.Addr())
-		hosts = append(hosts, ap.Addr().String())
-	}
-	c, err := ensureCerts(cfg.CertDir, []string{name}, ips, e.now())
+	snap, err := readSnapshot(e.runDir, raw, cfg)
 	if err != nil {
-		lg.Printf("certificates: %v", err)
+		lg.Printf("%v; service llm-gateway restart makes a new one", err)
 		return 1
 	}
-	j, err := NewFileJournal(cfg.JournalPath, 1<<20)
+	if err := loadBackendKeys(filepath.Join(e.runDir, backendKeysFile), cfg); err != nil {
+		lg.Printf("%v; service llm-gateway restart makes a new one", err)
+		return 1
+	}
+	leaf, err := loadLeaf(cfg.CertDir)
+	if err != nil {
+		lg.Printf("certificates: %v; service llm-gateway restart makes new ones", err)
+		return 1
+	}
+	if e.now().After(leaf.Leaf.NotAfter) {
+		lg.Printf("the certificate ended on %s; service llm-gateway restart renews it", leaf.Leaf.NotAfter.Format(time.DateOnly))
+	}
+	j, err := NewFileJournal(filepath.Join(e.runDir, journalSubdir, filepath.Base(cfg.JournalPath)), 1<<20)
 	if err != nil {
 		lg.Printf("journal: %v", err)
 		return 1
 	}
-	gw, err := NewGateway(cfg, Options{Hosts: hosts, Journal: j, Resolver: e.resolver, Now: e.now})
+	gw, err := NewGateway(cfg, Options{Hosts: snap.Hosts, Journal: j, Resolver: e.resolver, Now: e.now})
 	if err != nil {
 		lg.Print(err)
 		return 1
@@ -472,8 +545,8 @@ func serve(ctx context.Context, e *env, logw io.Writer) int {
 		ErrorLog:          log.New(logw, "llm-gateway: http: ", 0),
 	}
 	var wg sync.WaitGroup
-	errs := make(chan error, len(addrs))
-	for _, a := range addrs {
+	errs := make(chan error, len(snap.Listen))
+	for _, a := range snap.Listen {
 		ln, err := e.listen("tcp", a)
 		if err != nil {
 			lg.Printf("listen %s: %v", a, err)
@@ -482,7 +555,7 @@ func serve(ctx context.Context, e *env, logw io.Writer) int {
 			return 1
 		}
 		if !strings.HasSuffix(a, ":"+strconv.Itoa(cfg.LoopbackPort)) {
-			ln = tls.NewListener(ln, serverTLSConfig(c))
+			ln = tls.NewListener(ln, serverTLSConfig(leaf))
 		}
 		lg.Printf("listening on %s", a)
 		wg.Go(func() {

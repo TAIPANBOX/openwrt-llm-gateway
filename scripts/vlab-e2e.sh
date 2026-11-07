@@ -102,7 +102,7 @@ echo "  control, laptop -> internet: ${lnet:-no answer}; model box -> internet: 
 if [ -n "$lnet" ] && [ "$lnet" != 000 ] && { [ -z "$mnet" ] || [ "$mnet" = 000 ]; }; then check models_zone_has_no_internet 0; else check models_zone_has_no_internet 1; fi
 
 say "--- journal on r1"
-j=$(f "$VL ssh r1 -- cat /tmp/llm-gateway/journal.log")
+j=$(f "$VL ssh r1 -- cat /var/run/llm-gateway/journal/journal.log")
 echo "$j" | sed 's/^/  /'
 case "$j" in *E2E-PROMPT-MARKER*|*"stand-in answer"*|*"$KEY"*) say "FAIL journal holds content or a key"; failed=$((failed+1)) ;; esac
 

@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"net"
 	"net/netip"
@@ -46,12 +47,16 @@ const (
 
 var housePrefixes = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7"}
 
+// ensureCerts is prepare's, and the daemon never reaches it (invariant 14).
 func ensureCerts(dir string, names []string, ips []netip.Addr, now time.Time) (*certs, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	ca, caKey, err := loadPair(dir, caCertFile, caKeyFile)
-	if err != nil || !caCovers(ca, names, now) {
+	ca, caKey, err := loadCA(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !caCovers(ca, names, now) {
 		if ca, caKey, err = newCA(dir, names, now); err != nil {
 			return nil, err
 		}
@@ -70,6 +75,32 @@ func ensureCerts(dir string, names []string, ips []netip.Addr, now time.Time) (*
 	}, nil
 }
 
+// loadCA reads the CA, and returns nothing at all when there is none yet. A CA that is there and
+// cannot be used stops the caller: every device that trusts it would have to trust a new one, so
+// a new one is made only into an empty place, or by someone who has emptied it.
+func loadCA(dir string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	ca, key, err := loadPair(dir, caCertFile, caKeyFile)
+	if err == nil {
+		return ca, key, nil
+	}
+	_, certErr := os.Lstat(filepath.Join(dir, caCertFile))
+	_, keyErr := os.Lstat(filepath.Join(dir, caKeyFile))
+	if errors.Is(certErr, fs.ErrNotExist) && errors.Is(keyErr, fs.ErrNotExist) {
+		return nil, nil, nil
+	}
+	return nil, nil, fmt.Errorf("the CA in %s cannot be used (%w): restore it, or remove %s and %s to make a new one that every device must trust again", dir, err, caCertFile, caKeyFile)
+}
+
+// loadLeaf reads the gateway's certificate and key as prepare left them. It writes nothing and
+// opens neither of the CA's files: this is all of TLS the daemon has.
+func loadLeaf(dir string) (tls.Certificate, error) {
+	cert, key, err := loadPair(dir, leafCertFile, leafKeyFile)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{Certificate: [][]byte{cert.Raw}, PrivateKey: key, Leaf: cert}, nil
+}
+
 // fingerprint is the SHA-256 of a certificate as trust dialogs and openssl print it.
 func fingerprint(der []byte) string {
 	sum := sha256.Sum256(der)
@@ -81,8 +112,8 @@ func fingerprint(der []byte) string {
 	return strings.Join(parts, ":")
 }
 
-func serverTLSConfig(c *certs) *tls.Config {
-	return &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{c.Leaf}}
+func serverTLSConfig(leaf tls.Certificate) *tls.Config {
+	return &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{leaf}}
 }
 
 func caCovers(ca *x509.Certificate, names []string, now time.Time) bool {
@@ -97,11 +128,13 @@ func caCovers(ca *x509.Certificate, names []string, now time.Time) bool {
 	return true
 }
 
+// leafCurrent says whether a certificate is in force and not yet near its end.
+func leafCurrent(leaf *x509.Certificate, now time.Time) bool {
+	return leaf != nil && !now.Before(leaf.NotBefore) && leaf.NotAfter.Sub(now) >= leafRenewal
+}
+
 func leafGood(leaf, ca *x509.Certificate, names []string, ips []netip.Addr, now time.Time) bool {
-	if leaf == nil || now.Before(leaf.NotBefore) || leaf.NotAfter.Sub(now) < leafRenewal {
-		return false
-	}
-	if leaf.CheckSignatureFrom(ca) != nil {
+	if !leafCurrent(leaf, now) || leaf.CheckSignatureFrom(ca) != nil {
 		return false
 	}
 	have := slices.Clone(leaf.DNSNames)
@@ -232,9 +265,27 @@ func loadPair(dir, certFile, keyFile string) (*x509.Certificate, *ecdsa.PrivateK
 	return cert, key, nil
 }
 
+func readCert(path string) (*x509.Certificate, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	blk, _ := pem.Decode(raw)
+	if blk == nil {
+		return nil, fmt.Errorf("%s is not PEM", path)
+	}
+	return x509.ParseCertificate(blk.Bytes)
+}
+
 // writeFileAtomic writes a sibling and renames it over path, so a reader never sees half a key
 // and a key file is never, even briefly, readable by others.
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	return writeFileOwned(path, data, mode, nil)
+}
+
+// writeFileOwned is writeFileAtomic for a file with an owner of its own: own, when given, runs on
+// the sibling before it takes the name, so the file never stands there with the wrong owner.
+func writeFileOwned(path string, data []byte, mode os.FileMode, own func(tmp string) error) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
 	if err != nil {
 		return err
@@ -254,6 +305,11 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	}
 	if err := tmp.Close(); err != nil {
 		return err
+	}
+	if own != nil {
+		if err := own(tmp.Name()); err != nil {
+			return err
+		}
 	}
 	return os.Rename(tmp.Name(), path)
 }

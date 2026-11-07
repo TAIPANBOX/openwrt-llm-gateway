@@ -10,12 +10,12 @@
 
 Feature: the gateway speaks HTTPS on the LAN under a CA of the router's own
 
-  # bound to: TestCertificatesAreCreatedOnceAndKeptPrivate, TestServeBindsOnlyTheZoneAddressesAndLoopback
+  # bound to: TestCertificatesAreCreatedOnceAndKeptPrivate, TestServeBindsOnlyTheZoneAddressesAndLoopback, TestPrepareGivesOnlyTheLeafKeyToTheGroup
   Scenario: the first start makes the certificates and keeps the keys private
     Given a router with no certificates yet
     When the gateway starts
     Then a CA and a certificate for llm.lan and the LAN address exist
-    And both private keys are readable by root only
+    And the CA's key is readable by root only, and the certificate's by root and the gateway's group
     And the LAN port answers HTTPS only, from TLS 1.2 up
 
   # bound to: TestHouseCACannotVouchForOtherNames

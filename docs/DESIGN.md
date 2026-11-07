@@ -60,6 +60,7 @@ config gateway 'main'
 config backend 'desktop'
 	option url 'http://10.0.60.10:11434/v1'
 	option key_file ''              # an upstream key, if the model server has one (0600 root)
+                                    # read by prepare, never by the daemon
 	list model 'qwen3:14b'          # what this backend serves; listed, never discovered
 
 config client 'hermes'
@@ -71,8 +72,9 @@ config client 'hermes'
 
 Models are listed per backend, never discovered from its `/v1/models`: a model the owner did not
 name never appears, and each model is served by exactly one backend (a second is a configuration
-error). The journal is `/tmp/llm-gateway/journal.log` (RAM, 0600, one rotation at 1 MiB), so the
-flash takes none of its writes.
+error). The journal is `/var/run/llm-gateway/journal/journal.log` (RAM, 0600, one rotation at 1 MiB),
+so the flash takes none of its writes; `option journal` can name another file in that directory and
+nowhere else. `port` and `loopback_port` start at 1024, which a daemon without root can bind.
 
 Keys: 32 random bytes, base64url, prefix `llmgw_`. Stored as SHA-256 (a high-entropy token needs no
 slow hash). Compared with `crypto/subtle`. `llm-gateway client add NAME` prints the key, the
@@ -103,11 +105,68 @@ base URL and the certificate fingerprint once.
 Gate from the survey: CI fails if the source contains `0.0.0.0`, `[::]:` as a listen address, or
 `Access-Control-Allow-Origin` outside the test that asserts its absence, with a teeth case.
 
+## Root and the daemon
+
+The gateway leaves root in steps, each with a point to go back to. This step puts in place
+everything that must exist before the daemon can drop root, with the daemon itself still running
+as root. Its user, jail, capabilities and seccomp are the next step.
+
+`llm-gateway prepare` runs as root from `start_service`, before anything else, and does what needs
+root:
+
+| Step | Reads or writes | Result |
+|---|---|---|
+| The account | `llmgw_account` in the init script, and post-install and post-upgrade | user and group `llm-gateway`, `/var/empty`, `/bin/false`; none means no start |
+| Addresses | `/etc/config/firewall`, `ubus` | `ListenAddrs`, as before |
+| Name | `/etc/config/dhcp`, 0600 | `<name>.<domain>` |
+| Certificates | `/etc/llm-gateway`, stays 0700 root | `ca.key` 0600 root, `tls.key` 0640 root:llm-gateway, the certificates 0644 |
+| Keys | each `key_file` | `/var/run/llm-gateway/backend.keys`, lines of `<backend> <key>` |
+| Snapshot | last, so a daemon never finds one without its certificate | `/var/run/llm-gateway/snapshot.json` |
+
+`/var/run/llm-gateway` is 0750 root:llm-gateway; the two files in it are 0640 root:llm-gateway, given
+their owner before they take their name; `journal/` is 0700 and the account's, the only place the
+daemon writes. The snapshot:
+
+```json
+{"version":1,"config_sha256":"<hex of /etc/config/llm-gateway>","name":"llm.lan",
+ "listen":["192.168.1.1:8760","127.0.0.1:8761"],"hosts":["llm.lan","localhost","192.168.1.1","127.0.0.1"]}
+```
+
+`llm-gateway serve` reads the configuration, the snapshot, `backend.keys` and the leaf. It starts no
+program, reads neither the firewall's nor dnsmasq's configuration, and never opens the CA's files;
+the type it gets, `daemonEnv`, has no field that leads to any of them. A snapshot that is missing,
+damaged, of another version, from another configuration, or naming an address `ListenAddrs` could
+not have produced stops the start. Its hash is what keeps it honest about the configuration, not
+about who wrote it: the directory's owner is what keeps a daemon without root from changing where
+it listens. procd's respawn repeats only the command, so the snapshot has to stay good across
+respawns; a configuration changed since, without a reload, stops the daemon on its next respawn.
+
+Why a failed read stops `prepare` rather than falling back: the code before this step took a failed
+read of the domain for `lan`, a file that failed halfway for a shorter file, and a CA it could not
+load for no CA. As root those reads do not fail. A daemon without root could not read
+`/etc/config/dhcp` at all, so on any router whose domain is something else the CA would no longer
+have covered the name, and a new one would have replaced it, with every device losing its trust in
+silence. Now only a domain read in full can lead to a new CA, and the log gives both fingerprints.
+
+`prepare` needs no DNS: it runs once, at boot, and the backends are checked by the daemon at load
+and on every connection, which procd retries. It takes a lock on `/var/run/llm-gateway`, because two
+init scripts can run at once and only one may make the first CA.
+
+The daemon does not renew its certificate, and now neither does a respawn. `llm-gateway renew-due`
+answers whether it is within 30 days of its end, and `/etc/hotplug.d/ntp/50-llm-gateway` asks it on
+busybox ntpd's periodic event, every 11 minutes once the clock can be believed, and restarts the
+service, whose `prepare` renews it under the same CA.
+
+Going back: the previous package reads everything as before, since `tls.key` only changed its group
+and mode, and it ignores `/var/run/llm-gateway`. A downgrade runs no post-upgrade of the older
+package, so it needs `service llm-gateway restart` by hand. The feed is replaced whole, so the
+previous `.apk` has to be kept beside the new release for that to stay possible.
+
 ## Testing
 
 Tier T3: these are authorization decisions whose failure is silent. Layers 1 to 9 of the house
 testing rule apply: red-first, Gherkin in `features/` bound both ways, gates with teeth, mutation
-testing of invariants 1 to 4 and 7, coverage reported with it.
+testing of invariants 1 to 5, 7 and 14 to 18, coverage reported with it.
 `@measured docs/evidence/ 2026-11-01`: every test red first against a stub or a mutant, then
 green; 26 of 26 mutants caught; on OpenWrt 25.12.5 in vlab (a router VM, a `models` segment with
 a stand-in OpenAI server, a LAN client and a guest client) the four firewall checks passed in
@@ -117,10 +176,11 @@ on the LAN answered 200 with a key, 401 without one ([flint2-hermes-2026-11-01.m
 
 ## Commands
 
-`serve`, `client add|remove|list`, `cert`, `check`, `version`, and two the init script uses:
-`addresses` (where `serve` would listen; the first IPv4 one becomes `llm.<domain>` in dnsmasq,
-so the name never points where the gateway does not listen) and `models-zone NETWORK [-internet]`
-(invariant 6: a zone with input refused but DHCP and DNS, no forwarding in or out).
+`serve`, `client add|remove|list`, `cert`, `check` (also shows when the certificate ends), `version`,
+and those the service uses: `prepare` (the root step, above), `addresses` (where `serve` would listen;
+the first IPv4 one becomes `llm.<domain>` in dnsmasq, so the name never points where the gateway
+does not listen), `renew-due` (exit 0 when the certificate should be renewed) and `models-zone NETWORK
+[-internet]` (invariant 6: a zone with input refused but DHCP and DNS, no forwarding in or out).
 
 ## Packaging
 
@@ -130,7 +190,11 @@ the binary is 7.1 MiB on arm64, 7.6 MiB on arm, 7.7 MiB on amd64 and 8.5 MiB on 
 is about 3 MB. The apk is written by `apk mkpkg` from apk-tools 3 in a pinned alpine image (OpenWrt's
 own apk 3.0.5 ships without `mkpkg`), and published through its own signed feed on GitHub Pages,
 signed on the Mac that holds the key, in its own Docker, from the packages CI built:
-[FEED.md](FEED.md). Every entry of the package is root's. The first build, r1, named them
+[FEED.md](FEED.md). r3 packs post-upgrade beside post-install: apk runs post-upgrade, and not
+post-install, when it replaces a version, so an upgrade would otherwise make no account and leave the
+old binary running from memory until the next reboot. post-upgrade never enables: an owner who
+switched the start at boot off keeps it off. Removal leaves the account, as hermes-agent does, because
+a later user handed the same id would own what this one left. Every entry of the package is root's. The first build, r1, named them
 nobody:nobody (`@measured scripts/vlab-feed.sh OLD_APK=<r1> 2026-11-01`: `/usr/bin/llm-gateway` and
 `/etc/init.d/llm-gateway` installed as 65534:65534 on OpenWrt 25.12.5); it was never published,
 and the release is r2.
@@ -144,11 +208,12 @@ on, the package creates the `hermes` client and keeps its key in `/etc/hermes-ag
 `@decided 2026-11-01`: HTTPS on the LAN by default, chosen over plain HTTP with a key, at the cost
 that each client device trusts the router's certificate once.
 
-On first start the package makes a house CA (ECDSA P-256, `/etc/llm-gateway/ca.key` 0600 root,
+On first start `prepare` makes a house CA (ECDSA P-256, `/etc/llm-gateway/ca.key` 0600 root,
 `ca.crt`) whose name constraints, marked critical, permit only `llm.<domain>` and the private
-ranges, and under it the gateway's certificate (`tls.key` 0600 root, `tls.crt`) for `llm.<domain>`
-and the router's LAN addresses. The certificate lives 397 days and is renewed 30 days before its
-end, and reissued when the LAN address changes, always under the same CA, so a device trusts the
-CA once. `llm-gateway cert` prints the CA and its SHA-256 fingerprint, and `client add` prints the
+ranges, and under it the gateway's certificate (`tls.key` 0640 root:llm-gateway, `tls.crt`) for
+`llm.<domain>` and the router's LAN addresses. The certificate lives 397 days and is renewed 30 days
+before its end, and reissued when the LAN address changes, always under the same CA, so a device
+trusts the CA once. A new domain or gateway name needs a new CA, which the log says with both
+fingerprints. `llm-gateway cert` prints the CA and its SHA-256 fingerprint, and `client add` prints the
 fingerprint next to the key. TLS 1.2 is the floor. The loopback port stays plain HTTP: it never
 leaves the router, and the key is required on it too (invariant 1).

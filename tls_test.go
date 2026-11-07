@@ -65,7 +65,7 @@ func TestCertificatesAreCreatedOnceAndKeptPrivate(t *testing.T) {
 	if string(c1.Leaf.Certificate[0]) != string(c2.Leaf.Certificate[0]) {
 		t.Fatal("a second start issued a new certificate although the first one was still good")
 	}
-	cfg := serverTLSConfig(c2)
+	cfg := serverTLSConfig(c2.Leaf)
 	if cfg.MinVersion != tls.VersionTLS12 {
 		t.Fatalf("TLS floor is %x, want TLS 1.2", cfg.MinVersion)
 	}
