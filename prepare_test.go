@@ -150,7 +150,8 @@ func readAll(t *testing.T, path string) []byte {
 }
 
 // serveRefuses runs the daemon and fails the test unless it stops by itself, binding nothing. It
-// returns the daemon's log.
+// returns the daemon's log. The bind is a stand-in, always: on a machine without the test's address
+// a real one fails too, and a daemon that took a bad snapshot would pass for one that refused it.
 func serveRefuses(t *testing.T, e *env) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
@@ -650,7 +651,7 @@ func TestServeRefusesADamagedSnapshot(t *testing.T) {
 	// Cut at every length: a power cut, a full disk, a bad copy. Only the whole file will do.
 	for i := range bytes.TrimSpace(good) {
 		put(good[:i])
-		serveRefusesQuietly(t, e, fmt.Sprintf("cut at byte %d", i))
+		t.Run(fmt.Sprintf("cut at byte %d", i), func(t *testing.T) { serveRefuses(t, e) })
 	}
 	for name, b := range map[string]string{
 		"not JSON":                   "listen 192.168.8.1:8760\n",
@@ -667,22 +668,10 @@ func TestServeRefusesADamagedSnapshot(t *testing.T) {
 		"a listen of the wrong type": regexp.MustCompile(`"listen":\[[^\]]*\]`).ReplaceAllString(string(good), `"listen":"127.0.0.1:8761"`),
 	} {
 		put([]byte(b))
-		serveRefusesQuietly(t, e, name)
+		t.Run(name, func(t *testing.T) { serveRefuses(t, e) })
 	}
 	put(good)
 	daemonUp(t, e, 2)
-}
-
-// serveRefusesQuietly is serveRefuses for a sweep: serve never gets as far as blocking on a
-// snapshot it refuses, so this takes no time unless the test is about to fail.
-func serveRefusesQuietly(t *testing.T, e *env, what string) {
-	t.Helper()
-	var log bytes.Buffer
-	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
-	defer cancel()
-	if code := serve(ctx, e.daemon(), &log); code != 1 {
-		t.Fatalf("%s: serve exited %d, want 1: %s", what, code, log.String())
-	}
 }
 
 func TestServeRefusesAStaleSnapshot(t *testing.T) {

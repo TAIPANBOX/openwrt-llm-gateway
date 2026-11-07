@@ -9,6 +9,7 @@
 #
 #   scripts/vlab-e2e.sh              run it (from the Mac; forge over ssh)
 #   scripts/vlab-e2e.sh --selftest   the names of the checks, for gate-scenarios-bound.sh
+#   APK=<file> scripts/vlab-e2e.sh   use that x86_64 package, one CI built, and build nothing
 set -u
 CHECKS='guest_cannot_reach_the_port lan_cannot_reach_the_model_box lan_reaches_the_model_through_the_gateway models_zone_has_no_internet'
 if [ "${1:-}" = "--selftest" ]; then for c in $CHECKS; do echo "$c"; done; exit 0; fi
@@ -26,23 +27,30 @@ check() { # name, outcome (0 = holds)
 	if [ "$2" = 0 ]; then passed=$((passed+1)); say "PASS $1"; else failed=$((failed+1)); say "FAIL $1"; fi
 }
 
-say "build x86_64 and stage the package"
 cd "$REPO"
-rm -rf build/stage
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o build/llm-gateway.amd64 . || exit 1
-MKAPK_STAGE=build/stage ./mkapk.sh build/llm-gateway.amd64 "$VERSION" x86_64 >/dev/null || exit 1
+if [ -n "${APK:-}" ]; then
+	say "ship the package CI built, and e2e, to forge"
+	f "rm -rf $RD && mkdir -p $RD/build/stage" || exit 1
+	COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -C "$REPO" -cf - e2e | f "tar -xf - -C $RD" || exit 1
+	f "cat > $RD/build/stage/llm-gateway-$VERSION.apk" < "$APK" || exit 1
+else
+	say "build x86_64 and stage the package"
+	rm -rf build/stage
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o build/llm-gateway.amd64 . || exit 1
+	MKAPK_STAGE=build/stage ./mkapk.sh build/llm-gateway.amd64 "$VERSION" x86_64 >/dev/null || exit 1
 
-say "ship to forge"
-f "rm -rf $RD && mkdir -p $RD" || exit 1
-COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -C "$REPO" -cf - e2e build/stage | f "tar -xf - -C $RD" || exit 1
+	say "ship to forge"
+	f "rm -rf $RD && mkdir -p $RD" || exit 1
+	COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -C "$REPO" -cf - e2e build/stage | f "tar -xf - -C $RD" || exit 1
 
-# OpenWrt's own apk has no mkpkg (only the SDK's host build does), so the package is built on
-# forge by the pinned alpine image mkapk.sh names, already in forge's Docker; --pull never makes
-# sure nothing is downloaded for it.
-say "build the apk on forge"
-ALPINE=$(sed -n 's/^ALPINE=\${ALPINE:-\(.*\)}$/\1/p' "$REPO/mkapk.sh")
-f "sudo docker run --rm --pull never -v $RD/build/stage:/s -w /s $ALPINE sh run-mkpkg.sh" | tail -1 || exit 1
-f "ls $RD/build/stage/llm-gateway-*.apk" >/dev/null || { say "FAIL: no apk was built"; exit 1; }
+	# OpenWrt's own apk has no mkpkg (only the SDK's host build does), so the package is built on
+	# forge by the pinned alpine image mkapk.sh names, already in forge's Docker; --pull never makes
+	# sure nothing is downloaded for it.
+	say "build the apk on forge"
+	ALPINE=$(sed -n 's/^ALPINE=\${ALPINE:-\(.*\)}$/\1/p' "$REPO/mkapk.sh")
+	f "sudo docker run --rm --pull never -v $RD/build/stage:/s -w /s $ALPINE sh run-mkpkg.sh" | tail -1 || exit 1
+	f "ls $RD/build/stage/llm-gateway-*.apk" >/dev/null || { say "FAIL: no apk was built"; exit 1; }
+fi
 
 if f "$VL status" >/dev/null 2>&1; then say "FAIL: a lab is already up on forge; not touching it"; exit 1; fi
 trap 'say "take the lab down"; f "$VL down >/dev/null 2>&1; $VL check clean" | tail -1' EXIT
