@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>llm-gateway feed</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;max-width:46rem;margin:2.5rem auto;padding:0 16px;color:#1d1d1f;background:#fff}
+code,pre{background:#f2f2f2;border-radius:3px}code{padding:.1rem .3rem}
+pre{padding:.8rem;overflow-x:auto;white-space:pre}h2{margin-top:2rem}
+@media (prefers-color-scheme: dark){body{color:#e8e8e8;background:#161616}code,pre{background:#262626}a{color:#8ab4f8}}
+</style>
+<h1>llm-gateway</h1>
+<p>A signed apk feed for OpenWrt 25.12 with
+<a href="https://github.com/TAIPANBOX/openwrt-llm-gateway">llm-gateway</a>: the models of the house behind one name on the
+router, a key per device, HTTPS under the router's own CA and a journal without content.</p>
+<p>Package: llm-gateway 0.1.0-r4, built by <a href="https://github.com/TAIPANBOX/openwrt-llm-gateway/actions/runs/42379581827">CI run 42379581827</a>
+from commit <a href="https://github.com/TAIPANBOX/openwrt-llm-gateway/commit/6f623c4415100709e47c81bacbdebdfd04178f52">6f623c4</a>.</p>
+
+<h2>Add the feed</h2>
+<p>On the router, as root. The first line trusts the key, the third adds the feed for the router's
+own architecture.</p>
+<pre>wget -O /etc/apk/keys/llm-gateway.pem https://taipanbox.github.io/openwrt-llm-gateway/llm-gateway.pem
+sha256sum /etc/apk/keys/llm-gateway.pem
+echo "https://taipanbox.github.io/openwrt-llm-gateway/25.12/$(cat /etc/apk/arch)/packages.adb" &gt;&gt; /etc/apk/repositories.d/customfeeds.list
+
+apk update &amp;&amp; apk add llm-gateway</pre>
+<p>The key's SHA-256, which <code>sha256sum</code> must print:</p>
+<pre>d5151976fb774d291b4954cce7ea86cf4cf25de6c616c3fbbf05fd5a531457fa</pre>
+<p>The index and every package are signed with that key, so nothing above needs
+<code>--allow-untrusted</code>. Without the key apk drops the feed without a word and the package
+appears not to exist. The service does nothing until it is configured; the
+<a href="https://github.com/TAIPANBOX/openwrt-llm-gateway#install">README</a> goes on from there.</p>
+
+<h2>Architectures</h2>
+<ul><li><code>aarch64_cortex-a53</code>: has run on a GL.iNet Flint 2</li><li><code>arm_cortex-a7_neon-vfpv4</code>: built and signed</li><li><code>mipsel_24kc</code>: built and signed</li><li><code>x86_64</code>: has run on OpenWrt 25.12.5 in a virtual lab</li></ul>
+</html>
