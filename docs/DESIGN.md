@@ -1,6 +1,6 @@
 # openwrt-llm-gateway: design
 
-Status: released 2026-11-01, `llm-gateway` 0.1.0-r2 in its own signed apk feed ([FEED.md](FEED.md)).
+Status: released 2026-11-01, the current release 0.1.0-r4 since 2026-11-07, in its own signed apk feed ([FEED.md](FEED.md)).
 The package and the binary are `llm-gateway`.
 
 Provenance: anything unmarked is `@claude` (my reading or plan, re-check before relying on it).
@@ -270,7 +270,7 @@ switched the start at boot off keeps it off. Removal leaves the account, as herm
 a later user handed the same id would own what this one left. Every entry of the package is root's. The first build, r1, named them
 nobody:nobody (`@measured scripts/vlab-feed.sh OLD_APK=<r1> 2026-11-01`: `/usr/bin/llm-gateway` and
 `/etc/init.d/llm-gateway` installed as 65534:65534 on OpenWrt 25.12.5); it was never published,
-and the release is r2.
+and the first release was r2.
 
 hermes-openwrt r20 pairs with it the way it pairs with openwrt-mcp: with `hermes.main.llm_gateway`
 on, the package creates the `hermes` client and keeps its key in `/etc/hermes-agent/llm-gateway.key`
